@@ -1,38 +1,43 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden border-b border-border">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_#e8effc_0%,_transparent_55%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_#e8effc_0%,_transparent_50%)]"
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:linear-gradient(to_right,#e5e5e5_1px,transparent_1px),linear-gradient(to_bottom,#e5e5e5_1px,transparent_1px)] [background-size:64px_64px] [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_70%)]"
+        className="pointer-events-none absolute inset-0 opacity-[0.28] [background-image:linear-gradient(to_right,#e5e5e5_1px,transparent_1px),linear-gradient(to_bottom,#e5e5e5_1px,transparent_1px)] [background-size:72px_72px] [mask-image:radial-gradient(ellipse_at_center,black_25%,transparent_72%)]"
       />
 
-      <div className="relative mx-auto flex max-w-7xl flex-col gap-6 px-4 py-20 md:px-8 md:py-28 lg:py-32">
-        <Badge
-          variant="secondary"
-          className="w-fit animate-fade-up rounded-full px-3 py-1 text-xs font-medium"
-        >
-          Sarvam Epoch · Suvidha Desk
-        </Badge>
-
-        <h1 className="max-w-4xl animate-fade-up font-heading text-5xl font-semibold leading-[1.05] tracking-tight text-foreground md:text-6xl lg:text-7xl [animation-delay:80ms]">
-          IdentityGraph
-        </h1>
-
-        <p className="max-w-xl animate-fade-up text-lg text-muted-foreground md:text-xl [animation-delay:140ms]">
-          Voice, OCR, and mismatch checks — before the portal rejects the pack.
+      <div className="relative mx-auto flex min-h-[72dvh] max-w-7xl flex-col justify-center gap-7 px-4 py-20 md:px-8 md:py-28">
+        <p className="animate-fade-up text-sm font-medium text-muted-foreground">
+          IdentityGraph India
         </p>
 
-        <div className="flex animate-fade-up flex-wrap gap-3 [animation-delay:200ms]">
+        <h1 className="max-w-4xl animate-fade-up font-heading text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl [animation-delay:60ms]">
+          Suvidha Desk
+        </h1>
+
+        <p className="max-w-xl animate-fade-up text-lg text-muted-foreground md:text-xl [animation-delay:120ms]">
+          When Aadhaar, DL, and the form disagree, catch it at the counter —
+          before the portal sends the citizen home.
+        </p>
+
+        <div className="flex animate-fade-up flex-wrap items-center gap-3 [animation-delay:180ms]">
           <Button size="lg" render={<Link href="/app" />} nativeButton={false}>
             Open desk
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            render={<Link href="#how" />}
+            nativeButton={false}
+          >
+            How it works
           </Button>
         </div>
       </div>

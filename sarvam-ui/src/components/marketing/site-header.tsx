@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/sheet";
 
 const links = [
-  { href: "#pillars", label: "Steps" },
-  { href: "#platform", label: "Checks" },
+  { href: "#how", label: "How it works" },
+  { href: "#desk", label: "The desk" },
 ];
 
 export function SiteHeader() {

@@ -22,9 +22,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IdentityGraph India — Suvidha Desk for Sarvam Epoch",
+  title: "IdentityGraph India — catch identity rejections at the desk",
   description:
-    "CSC operator desk for India's still-manual identity forms. Sarvam Vision OCR, Bulbul voice prompts, mismatch verify, portal pack.",
+    "Citizens still fill identity forms by hand. Portals reject name and address mismatches after the visit. Suvidha Desk catches the risk at the CSC counter — before upload.",
 };
 
 export default function RootLayout({
