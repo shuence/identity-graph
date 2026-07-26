@@ -118,6 +118,10 @@ Prefer a noisy readable value over UNCERTAIN when text is present.
 Bank passbook / statement: dob is almost never printed. Account opening date,
 A/C open date, CIF date, statement date, or transaction date are NOT date of birth —
 leave dob as UNCERTAIN unless the OCR literally says Date of Birth / DOB.
+Aadhaar: Issue Date is NOT dob. Prefer जन्म तिथि/DOB. If S/O or D/O is absent but
+full_name is Given + Father + Surname (3+ tokens), set father_name to the middle
+token(s) — e.g. "Shubham Vishnu Pitekar" → father_name "Vishnu". Address is often
+only on the reverse; UNCERTAIN is correct for front-only scans.
 If the scan is handwritten / filled-in form / block letters:
 - Read carefully; do NOT invent neat spellings that are not supported by the OCR.
 - If a character is ambiguous, keep UNCERTAIN for that field.
@@ -145,7 +149,13 @@ def extract_fields(
 ) -> dict:
     """Extract fields with Sarvam-30B. Never raises — returns UNCERTAIN dict on failure."""
     hints = {
-        "Aadhaar Card": "Aadhaar card. Need full_name, dob, 12-digit id_number, address, father/husband name.",
+        "Aadhaar Card": (
+            "Aadhaar card (UIDAI). Need full_name, dob (जन्म तिथि/DOB — NOT Issue Date), "
+            "12-digit id_number (not VID), address if present. "
+            "Father/husband: use S/O or D/O if printed; else for Indian Given+Father+Surname "
+            "names take the middle name as father_name "
+            '(e.g. "Shubham Vishnu Pitekar" → father_name "Vishnu").'
+        ),
         "PAN Card": "PAN card. Need full_name, father_name, dob, PAN id_number. Address usually absent.",
         "Bank Passbook": (
             "Bank passbook/statement first page. Need account holder full_name, "
@@ -264,6 +274,45 @@ def _scrub_bank_passbook_dob(ocr_text: str, fields: dict) -> dict:
     return out
 
 
+def _clean_ocr_noise(ocr_text: str) -> str:
+    """Strip Vision photo captions / embedded images that drown real Aadhaar text."""
+    text = ocr_text or ""
+    text = re.sub(r"!\[[^\]]*\]\(data:image/[^)]+\)", "\n", text)
+    text = re.sub(
+        r"data:image/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=\s]+",
+        "\n",
+        text,
+    )
+    text = re.sub(
+        r"The image provided is a portrait photograph[\s\S]*?"
+        r"(?:plain background\.)",
+        "\n",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _father_from_indian_full_name(full_name: str) -> str | None:
+    """Given + Father + Surname → middle token(s) are father (common on Aadhaar)."""
+    if _is_uncertain(full_name):
+        return None
+    parts = [p for p in re.split(r"\s+", str(full_name).strip()) if p]
+    # Need at least Given Father Surname
+    if len(parts) < 3:
+        return None
+    # Skip if any token looks like a title-only name
+    bad = {"mr", "mrs", "ms", "shri", "smt", "kumari"}
+    if parts[0].lower().rstrip(".") in bad:
+        parts = parts[1:]
+        if len(parts) < 3:
+            return None
+    middle = " ".join(parts[1:-1]).strip(" .-")
+    if not middle or len(middle) < 2:
+        return None
+    return middle
+
+
 def regex_fallback_fields(ocr_text: str, doc_type: str, fields: dict) -> dict:
     """Fill gaps and override hallucinated IDs when OCR has a clear pattern."""
     out = dict(fields)
@@ -274,7 +323,7 @@ def regex_fallback_fields(ocr_text: str, doc_type: str, fields: dict) -> dict:
     # --- ID numbers: prefer OCR pattern over LLM (models sometimes invent IDs) ---
     ocr_id = None
     if doc_type == "Aadhaar Card":
-        # Prefer spaced Aadhaar (XXXX XXXX XXXX). Avoid eating DOB years like 2002.
+        # Prefer spaced Aadhaar (XXXX XXXX XXXX). Avoid VID (16 digits) and DOB years.
         m = re.search(r"\b([2-9]\d{3})[ \-](\d{4})[ \-](\d{4})\b", text)
         if not m:
             m = re.search(r"\b([2-9]\d{11})\b", re.sub(r"\s+", "", text))
@@ -310,16 +359,22 @@ def regex_fallback_fields(ocr_text: str, doc_type: str, fields: dict) -> dict:
         if _is_uncertain(out.get("id_number")) or current != ocr_compact:
             if current and current != ocr_compact and not _is_uncertain(out.get("id_number")):
                 notes_extra.append(f"Overrode LLM id_number {current!r} with OCR {ocr_id!r}")
-            out["id_number"] = ocr_id
+        # Always prefer OCR formatting (spaced Aadhaar) when digits match.
+        out["id_number"] = ocr_id
+    elif doc_type == "Aadhaar Card" and not _is_uncertain(out.get("id_number")):
+        digits = re.sub(r"\D", "", str(out["id_number"]))
+        if len(digits) == 12 and digits[0] in "23456789":
+            out["id_number"] = f"{digits[:4]} {digits[4:8]} {digits[8:]}"
 
     # DOB: never grab a naked date on passbooks (opening date looks identical).
     if doc_type == "Bank Passbook":
         out = _scrub_bank_passbook_dob(text, out)
-    elif _is_uncertain(out.get("dob")):
+    else:
         labeled = _dob_from_labeled_ocr(text)
         if labeled:
+            # Always prefer explicit DOB / जन्म तिथि over Issue Date hallucinations.
             out["dob"] = labeled
-        elif doc_type in (
+        elif _is_uncertain(out.get("dob")) and doc_type in (
             "Aadhaar Card",
             "PAN Card",
             "Driving License",
@@ -327,9 +382,13 @@ def regex_fallback_fields(ocr_text: str, doc_type: str, fields: dict) -> dict:
             "School Certificate",
             "Passport",
         ):
+            # Avoid Issue Date: only use unlabeled date if no "Issue" nearby.
             m = re.search(r"\b(\d{2}[/-]\d{2}[/-]\d{4})\b", text)
             if m:
-                out["dob"] = m.group(1).replace("-", "/")
+                start = max(0, m.start() - 24)
+                ctx = text[start : m.end() + 8].lower()
+                if "issue" not in ctx and "जारी" not in ctx:
+                    out["dob"] = m.group(1).replace("-", "/")
 
     if _is_uncertain(out.get("full_name")):
         for pat in (
@@ -346,12 +405,19 @@ def regex_fallback_fields(ocr_text: str, doc_type: str, fields: dict) -> dict:
 
     if _is_uncertain(out.get("father_name")):
         m = re.search(
-            r"(?:Father|Father'?s Name|S/O|D/O|C/O|पिता)\s*[:\-/]?\s*([A-Za-z][A-Za-z.\s]{2,50})",
+            r"(?:Father|Father'?s Name|S/O|D/O|C/O|W/O|पिता|पति)\s*[:\-/]?\s*([A-Za-z][A-Za-z.\s]{2,50})",
             text,
             re.IGNORECASE,
         )
         if m:
             out["father_name"] = re.sub(r"\s+", " ", m.group(1)).strip(" .-")
+        elif doc_type in ("Aadhaar Card", "PAN Card"):
+            inferred = _father_from_indian_full_name(str(out.get("full_name") or ""))
+            if inferred:
+                out["father_name"] = inferred
+                notes_extra.append(
+                    f"father_name inferred from middle of full_name ({inferred!r})"
+                )
 
     if _is_uncertain(out.get("address")):
         m = re.search(
@@ -415,6 +481,7 @@ def process_document(
             f"Try a clear JPG/PNG photo (handwritten: flat light, no blur). Last error: {last_err}"
         )
 
+    ocr_text = _clean_ocr_noise(ocr_text)
     fields = extract_fields(client, ocr_text, doc_type, handwritten=handwritten)
     fields = regex_fallback_fields(ocr_text, doc_type, fields)
     if handwritten and "handwrit" not in str(fields.get("confidence_notes", "")).lower():
