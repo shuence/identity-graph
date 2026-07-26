@@ -1,12 +1,12 @@
 """Suvidha desk voice agent — for citizens who cannot type the form.
 
-Flow at the counter (deliberate, with confirmation):
+Fast counter flow (no yes/no round-trip):
   1. Ask one field
-  2. Citizen answers → validate → read back for YES/NO confirm
-  3. Only on YES: commit the value and ask the next field
-  4. When all fields confirmed → review_form (editable typed form)
+  2. Citizen answers → validate → save immediately → ask next
+  3. When required fields are filled → review_form (editable typed form)
 
-Uses the same API_KEY as OCR (Saaras STT + Bulbul TTS + optional Sarvam-30B).
+Uses the same API_KEY as OCR (Saaras STT + Bulbul TTS).
+LLM extraction is off by default so turns stay snappy.
 """
 
 from __future__ import annotations
@@ -15,27 +15,7 @@ import json
 import re
 from typing import Any
 
-from identitygraph.voice import get_client, parse_yes_no
-
-AGENT_SYSTEM = """You are "Sevak", a Suvidha desk voice agent. Speak ENGLISH only.
-
-Reply with ONLY JSON:
-{
-  "reply_en": "short English the citizen hears",
-  "field_updates": {},
-  "active_field": "field being collected",
-  "pending_confirm": null | {"field_key": "...", "value": "..."},
-  "ask_next": "English prompt or null",
-  "redirect": null | "review_form" | "upload_docs",
-  "action": "ask" | "confirm" | "answer" | "redirect" | "clarify"
-}
-
-Rules:
-- Never invent values. Never skip confirmation.
-- If collecting a field answer: propose pending_confirm and ask "Say YES or NO".
-- Do not advance until confirmed (handled by the server — keep replies short).
-- Keep reply_en under 160 characters.
-"""
+from identitygraph.voice import get_client
 
 
 def _normalize_spelled(text: str) -> str:
@@ -89,15 +69,13 @@ def _strip_leadins(text: str) -> str:
 
 
 def _first_empty(fields: list[dict], answers: dict[str, str]) -> str | None:
-    """Next empty field. Prefer required (high_stakes) fields first; skip optionals
-    until required ones are done, then optional empties are also skippable for done."""
+    """Next empty required field. Optionals are skippable for completion."""
     required = [f for f in fields if f.get("high_stakes")]
     optional = [f for f in fields if not f.get("high_stakes")]
     for group in (required, optional):
         for f in group:
             key = f["key"]
             if not (answers.get(key) or "").strip():
-                # For completion / advance: only require high_stakes.
                 if group is optional:
                     return None
                 return key
@@ -110,13 +88,11 @@ def _label(fields: list[dict], key: str) -> str:
 
 def _field_prompt(fields: list[dict], key: str | None) -> str:
     if not key:
-        return "All details are captured. Please review the form on screen and edit anything wrong."
+        return "All set. Opening the form so you can review and edit."
     f = next((x for x in fields if x["key"] == key), None)
     label = (f or {}).get("label") or key.replace("_", " ")
     en = (f or {}).get("prompt_en") or f"Please tell me your {label}."
-    if key and "name" in key:
-        en = f"{en} Speak clearly. Spelling letter by letter is OK."
-    return str(en)[:200]
+    return str(en)[:140]
 
 
 def _resolve_active(
@@ -128,33 +104,33 @@ def _resolve_active(
 
 
 def _validate_value(field_key: str, value: str) -> str | None:
-    """Return an English error message if invalid, else None."""
+    """Return a short English error if invalid, else None."""
     v = (value or "").strip()
     if not v or len(v) < 2:
-        return "I could not hear a clear answer. Please say it again, slowly."
+        return "I did not catch that. Please say it again."
 
     if any(k in field_key for k in ("mobile", "phone")):
         digits = re.sub(r"\D", "", v)
         if len(digits) < 10:
-            return "That mobile number looks incomplete. Please say all 10 digits."
+            return "Mobile looks incomplete. Say all 10 digits."
         if len(digits) > 12:
-            return "That number is too long. Please say your 10-digit mobile number."
+            return "That number is too long. Say your 10-digit mobile."
         return None
 
     if "email" in field_key:
         if "@" not in v or "." not in v.split("@")[-1]:
-            return "That does not look like an email. Please say it again, for example name at gmail.com."
+            return "That does not look like an email. Try again."
         return None
 
     if "dob" in field_key or field_key.endswith("_date"):
         if not re.search(r"\d", v):
-            return "Please include the date with numbers, for example 15 March 2002."
+            return "Include the date with numbers, like 15 March 2002."
         return None
 
-    if "aadhaar" in field_key or field_key in ("id_number",) and "aadhaar" in field_key.lower():
+    if "aadhaar" in field_key:
         digits = re.sub(r"\D", "", v)
         if len(digits) not in (12,) and len(digits) < 8:
-            return "Aadhaar should be 12 digits. Please say it again slowly."
+            return "Aadhaar should be 12 digits. Say it again slowly."
         return None
 
     if "gender" in field_key:
@@ -166,31 +142,23 @@ def _validate_value(field_key: str, value: str) -> str | None:
     if "name" in field_key:
         letters = re.sub(r"[^A-Za-z]", "", v)
         if len(letters) < 3:
-            return "That name is too short. Please say your full name clearly."
-        # Reject obvious STT garbage of 1 token under 3 letters already handled
+            return "Name is too short. Say your full name."
         if len(v.split()) == 1 and len(letters) < 4:
-            return "Please say your full name, including surname if you have one."
+            return "Please say your full name, including surname."
         return None
 
     if "address" in field_key:
         if len(v) < 6:
-            return "Please say a fuller address — area, city, or pin code."
+            return "Please say a fuller address — area, city, or pin."
         return None
 
     return None
 
 
-def _confirm_prompt(label: str, value: str) -> str:
-    return (
-        f"I heard: {value}. "
-        f"Is this correct for {label}? Say YES to save, or NO to say it again."
-    )[:200]
-
-
-def _ask_next_prompt(fields: list[dict], key: str | None) -> str:
+def _saved_next(fields: list[dict], key: str | None, value: str) -> str:
     if not key:
-        return "All details captured. Opening the form for you to review and edit."
-    return f"Saved. Next question. {_field_prompt(fields, key)}"[:200]
+        return f"Got it: {value}. Opening the form to review."
+    return f"Got it. {_field_prompt(fields, key)}"[:180]
 
 
 def run_agent_turn(
@@ -199,40 +167,21 @@ def run_agent_turn(
     transcript: str,
     answers: dict[str, str] | None = None,
     active_field: str | None = None,
-    pending_confirm: dict[str, str] | None = None,
+    pending_confirm: dict[str, str] | None = None,  # kept for API compat; ignored
     history: list[dict[str, str]] | None = None,
-    use_llm: bool = True,
+    use_llm: bool = False,
 ) -> dict[str, Any]:
+    del pending_confirm  # no yes/no confirm step — save immediately
     answers = {k: str(v) for k, v in (answers or {}).items() if v is not None}
     fields = service.get("form_fields") or []
     history = history or []
     transcript = (transcript or "").strip()
     active_field = _resolve_active(fields, answers, active_field)
-    pending = pending_confirm if isinstance(pending_confirm, dict) else None
-    if pending:
-        pk = pending.get("field_key")
-        pv = pending.get("value")
-        if not pk or not pv:
-            pending = None
 
     # --- Greeting ---
     if not transcript:
-        if pending:
-            label = _label(fields, pending["field_key"])
-            reply = _confirm_prompt(label, pending["value"])
-            return {
-                "reply_en": reply,
-                "reply_hi": reply,
-                "field_updates": {},
-                "active_field": pending["field_key"],
-                "pending_confirm": pending,
-                "ask_next": reply,
-                "redirect": None,
-                "action": "confirm",
-                "engine": "greeting",
-            }
         prompt = _field_prompt(fields, active_field)
-        reply = f"Hello. I will ask one question at a time. {prompt}"
+        reply = f"Hello. {prompt}"
         return {
             "reply_en": reply,
             "reply_hi": reply,
@@ -247,96 +196,61 @@ def run_agent_turn(
 
     lower = transcript.lower()
 
-    # --- Situational Q&A (does not clear pending) ---
+    # --- Situational Q&A ---
     if any(w in lower for w in ("document", "docs", "what do i need", "proof", "paper")):
-        msg = (
-            "Bring Aadhaar and the proof for the field you want to change — "
-            "PAN, driving licence, or passport."
-        )
+        msg = "Bring Aadhaar plus proof for the change — PAN, DL, or passport."
         return {
             "reply_en": msg,
             "reply_hi": msg,
             "field_updates": {},
             "active_field": active_field,
-            "pending_confirm": pending,
+            "pending_confirm": None,
             "ask_next": None,
             "redirect": None,
             "action": "answer",
             "engine": "heuristic",
         }
 
-    # --- Pending confirmation branch ---
-    if pending:
-        yn = parse_yes_no(transcript)
-        field_key = pending["field_key"]
-        value = pending["value"]
-        label = _label(fields, field_key)
-
-        if yn == "yes":
-            merged = {**answers, field_key: value}
-            nxt = _first_empty(fields, merged)
-            if nxt:
-                reply = _ask_next_prompt(fields, nxt)
-                return {
-                    "reply_en": reply,
-                    "reply_hi": reply,
-                    "field_updates": {field_key: value},
-                    "active_field": nxt,
-                    "pending_confirm": None,
-                    "ask_next": _field_prompt(fields, nxt),
-                    "redirect": None,
-                    "action": "ask",
-                    "engine": "confirm_yes",
-                }
-            reply = _ask_next_prompt(fields, None)
+    # --- Redo last / skip (quick corrections without yes/no) ---
+    if any(w in lower for w in ("wrong", "again", "repeat", "redo", "change that", "go back")):
+        target = active_field or _first_empty(fields, answers)
+        if target and (answers.get(target) or "").strip():
+            # clear current if already filled and re-ask
+            pass
+        # If previous field exists in answers and they want redo, clear last filled
+        filled_keys = [f["key"] for f in fields if (answers.get(f["key"]) or "").strip()]
+        if filled_keys and any(w in lower for w in ("wrong", "again", "redo", "go back", "change that")):
+            last = filled_keys[-1]
+            reply = f"Okay. {_field_prompt(fields, last)}"
             return {
                 "reply_en": reply,
                 "reply_hi": reply,
-                "field_updates": {field_key: value},
-                "active_field": None,
+                "field_updates": {last: ""},
+                "active_field": last,
                 "pending_confirm": None,
-                "ask_next": None,
-                "redirect": "review_form",
-                "action": "redirect",
-                "engine": "confirm_yes",
-            }
-
-        if yn == "no":
-            reply = f"Okay, let's try again. {_field_prompt(fields, field_key)}"
-            return {
-                "reply_en": reply,
-                "reply_hi": reply,
-                "field_updates": {},
-                "active_field": field_key,
-                "pending_confirm": None,
-                "ask_next": _field_prompt(fields, field_key),
+                "ask_next": _field_prompt(fields, last),
                 "redirect": None,
                 "action": "ask",
-                "engine": "confirm_no",
+                "engine": "heuristic",
             }
-
-        # Unclear yes/no — stay on confirm, do not overwrite
-        reply = (
-            f"Please say YES if {value} is correct for {label}, "
-            f"or NO to say it again."
-        )
+        reply = _field_prompt(fields, target)
         return {
             "reply_en": reply,
             "reply_hi": reply,
             "field_updates": {},
-            "active_field": field_key,
-            "pending_confirm": pending,
+            "active_field": target,
+            "pending_confirm": None,
             "ask_next": reply,
             "redirect": None,
-            "action": "confirm",
-            "engine": "confirm_unclear",
+            "action": "ask",
+            "engine": "heuristic",
         }
 
     # --- Done intent ---
     if any(w in lower for w in ("done", "finished", "complete", "review", "that's all", "thats all")):
         empty = _first_empty(fields, answers)
         if empty:
-            reply = f"We still need: {_label(fields, empty)}. {_field_prompt(fields, empty)}"
+            reply = f"Still need {_label(fields, empty)}. {_field_prompt(fields, empty)}"
             return {
                 "reply_en": reply,
                 "reply_hi": reply,
@@ -348,7 +262,7 @@ def run_agent_turn(
                 "action": "ask",
                 "engine": "heuristic",
             }
-        reply = _ask_next_prompt(fields, None)
+        reply = _field_prompt(fields, None)
         return {
             "reply_en": reply,
             "reply_hi": reply,
@@ -364,7 +278,7 @@ def run_agent_turn(
     # --- Collect answer for active field ---
     target = active_field or _first_empty(fields, answers)
     if not target:
-        reply = _ask_next_prompt(fields, None)
+        reply = _field_prompt(fields, None)
         return {
             "reply_en": reply,
             "reply_hi": reply,
@@ -377,10 +291,10 @@ def run_agent_turn(
             "engine": "heuristic",
         }
 
-    # Optional LLM assist only for messy answers (not for confirm path)
     value = None
     engine = "heuristic"
-    if use_llm and len(transcript.split()) >= 6:
+    # LLM only when explicitly requested AND transcript is very long/messy
+    if use_llm and len(transcript.split()) >= 10:
         llm = _llm_extract_value(service, transcript, target, answers)
         if llm:
             value = llm
@@ -393,8 +307,8 @@ def run_agent_turn(
     if err:
         reply = f"{err} {_field_prompt(fields, target)}"
         return {
-            "reply_en": reply[:220],
-            "reply_hi": reply[:220],
+            "reply_en": reply[:200],
+            "reply_hi": reply[:200],
             "field_updates": {},
             "active_field": target,
             "pending_confirm": None,
@@ -404,19 +318,31 @@ def run_agent_turn(
             "engine": engine,
         }
 
-    # Valid → pending confirm (do NOT commit yet)
-    label = _label(fields, target)
-    pending = {"field_key": target, "value": value}
-    reply = _confirm_prompt(label, value)
+    # Valid → commit immediately and ask next (no YES/NO)
+    merged = {**answers, target: value}
+    nxt = _first_empty(fields, merged)
+    reply = _saved_next(fields, nxt, value)
+    if nxt:
+        return {
+            "reply_en": reply,
+            "reply_hi": reply,
+            "field_updates": {target: value},
+            "active_field": nxt,
+            "pending_confirm": None,
+            "ask_next": _field_prompt(fields, nxt),
+            "redirect": None,
+            "action": "ask",
+            "engine": engine,
+        }
     return {
         "reply_en": reply,
         "reply_hi": reply,
-        "field_updates": {},  # wait for YES
-        "active_field": target,
-        "pending_confirm": pending,
-        "ask_next": reply,
-        "redirect": None,
-        "action": "confirm",
+        "field_updates": {target: value},
+        "active_field": None,
+        "pending_confirm": None,
+        "ask_next": None,
+        "redirect": "review_form",
+        "action": "redirect",
         "engine": engine,
     }
 

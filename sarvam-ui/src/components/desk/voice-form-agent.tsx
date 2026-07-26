@@ -29,9 +29,9 @@ type ChatMsg = {
 type Mode = "idle" | "listening" | "thinking" | "speaking";
 
 const SPEECH_RMS = 0.018;
-const SILENCE_HANG_MS = 1800; // wait longer so names aren't cut off
-const MAX_UTTERANCE_MS = 20000;
-const NO_SPEECH_MS = 10000;
+const SILENCE_HANG_MS = 900; // end turn soon after the citizen pauses
+const MAX_UTTERANCE_MS = 14000;
+const NO_SPEECH_MS = 7000;
 
 function pickMime() {
   if (typeof MediaRecorder === "undefined") return "";
@@ -136,15 +136,10 @@ export function VoiceFormAgent({
   const [conversing, setConversing] = useState(false);
   const [level, setLevel] = useState(0);
   const [lastAgentLine, setLastAgentLine] = useState("");
-  const [pendingConfirm, setPendingConfirm] = useState<{
-    field_key: string;
-    value: string;
-  } | null>(null);
 
   const convoRef = useRef(false);
   const answersRef = useRef(answers);
   const activeFieldRef = useRef<string | null>(null);
-  const pendingRef = useRef<{ field_key: string; value: string } | null>(null);
   const messagesRef = useRef<ChatMsg[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -162,9 +157,6 @@ export function VoiceFormAgent({
   useEffect(() => {
     activeFieldRef.current = activeField;
   }, [activeField]);
-  useEffect(() => {
-    pendingRef.current = pendingConfirm;
-  }, [pendingConfirm]);
 
   useEffect(() => {
     scrollerRef.current?.scrollTo({
@@ -180,8 +172,8 @@ export function VoiceFormAgent({
           resolve();
           return;
         }
-        // Slower English voice so citizens can follow
-        speakPrompt(text, "en-IN", { pace: 0.85 })
+        // Natural English pace — confirm round-trips already removed for speed
+        speakPrompt(text, "en-IN", { pace: 1.05 })
           .then((blob) => {
             const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
@@ -217,24 +209,23 @@ export function VoiceFormAgent({
           transcript: t,
           answers: answersRef.current,
           active_field: activeFieldRef.current,
-          pending_confirm: pendingRef.current,
           history,
-          use_llm: apiLive,
+          use_llm: false, // heuristic only — LLM adds seconds per turn
         });
         if (Object.keys(result.field_updates || {}).length) {
           onAnswers(result.field_updates);
           answersRef.current = { ...answersRef.current, ...result.field_updates };
           const filled = Object.entries(result.field_updates)
+            .filter(([, v]) => (v || "").trim())
             .map(([k, v]) => `${k}=${v}`)
             .join(" · ");
-          setMessages((m) => [
-            ...m,
-            { role: "system", text: `Saved after your YES: ${filled}` },
-          ]);
+          if (filled) {
+            setMessages((m) => [
+              ...m,
+              { role: "system", text: `Saved: ${filled}` },
+            ]);
+          }
         }
-        const pending = result.pending_confirm || null;
-        setPendingConfirm(pending);
-        pendingRef.current = pending;
         setActiveField(result.active_field);
         activeFieldRef.current = result.active_field;
         const reply = result.reply_en || result.reply_hi;
@@ -247,7 +238,7 @@ export function VoiceFormAgent({
         return null;
       }
     },
-    [apiLive, onAnswers, onRedirect, service.id]
+    [onAnswers, onRedirect, service.id]
   );
 
   const listenForSpeech = useCallback((): Promise<Blob | null> => {
@@ -438,7 +429,7 @@ export function VoiceFormAgent({
           answers: answersRef.current,
           active_field: null,
           history: [],
-          use_llm: apiLive,
+          use_llm: false,
         });
         if (cancelled) return;
         setActiveField(result.active_field);
@@ -446,8 +437,6 @@ export function VoiceFormAgent({
         greeting = result.reply_en || result.reply_hi;
         setLastAgentLine(greeting);
         setMessages([{ role: "agent", text: greeting }]);
-        setPendingConfirm(result.pending_confirm || null);
-        pendingRef.current = result.pending_confirm || null;
       } catch {
         if (cancelled) return;
         greeting =
@@ -595,10 +584,6 @@ export function VoiceFormAgent({
                       <p className="truncate text-[11px] text-muted-foreground">
                         {answers[f.key]}
                       </p>
-                    ) : pendingConfirm?.field_key === f.key ? (
-                      <p className="text-[11px] text-status-uncertain">
-                        Confirm: {pendingConfirm.value}
-                      </p>
                     ) : current ? (
                       <p className="text-[11px] text-[#0b3d91]">Asking now…</p>
                     ) : (
@@ -646,46 +631,16 @@ export function VoiceFormAgent({
 
             <SevakAvatar mode={mode} level={level} />
             <p className="text-xs text-muted-foreground">
-              {pendingConfirm
-                ? "Please say YES to save, or NO to repeat — we will not move on until you confirm."
-                : mode === "listening"
-                  ? "Speak clearly. I wait ~2 seconds after you pause so I do not cut you off."
-                  : mode === "speaking"
-                    ? "Sevak is speaking — listen, then answer."
+              {mode === "listening"
+                ? "Speak your answer. I move on as soon as you pause."
+                : mode === "speaking"
+                  ? "Sevak is speaking — listen, then answer."
+                  : mode === "thinking"
+                    ? "Saving your answer…"
                     : apiLive
-                      ? "English voice · same API_KEY in Sarvam_AI/.env"
+                      ? "Answer one field at a time. Say “wrong” to redo the last one."
                       : "API_KEY missing — typing still works below."}
             </p>
-
-            {pendingConfirm ? (
-              <div className="mt-2 w-full max-w-md border border-status-uncertain/40 bg-status-uncertain/10 px-4 py-3 text-left">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-status-uncertain">
-                  Confirm before saving
-                </p>
-                <p className="mt-1 text-sm font-medium text-foreground">
-                  {pendingConfirm.value}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    className="rounded-sm"
-                    disabled={mode === "thinking" || mode === "speaking"}
-                    onClick={() => void runCitizenTurn("yes")}
-                  >
-                    Yes — save
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-sm"
-                    disabled={mode === "thinking" || mode === "speaking"}
-                    onClick={() => void runCitizenTurn("no")}
-                  >
-                    No — say again
-                  </Button>
-                </div>
-              </div>
-            ) : null}
           </div>
 
           <div

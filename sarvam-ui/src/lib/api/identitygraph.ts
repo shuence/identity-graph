@@ -277,7 +277,7 @@ export async function speakPrompt(
     body: JSON.stringify({
       text,
       language,
-      pace: opts?.pace ?? 0.88,
+      pace: opts?.pace ?? 1.0,
       speaker: opts?.speaker ?? "priya",
     }),
   });

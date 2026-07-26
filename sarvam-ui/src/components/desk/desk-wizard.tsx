@@ -5,18 +5,28 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
+  Building2,
+  Car,
   CheckCircle2,
   Clock,
   Download,
   ExternalLink,
   FileScan,
+  FileText,
+  Fingerprint,
+  IdCard,
+  Landmark,
   Loader2,
+  MessageSquareWarning,
+  PenLine,
+  Scale,
   ScanSearch,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
   Upload,
+  Vote,
   Volume2,
   X,
 } from "lucide-react";
@@ -88,12 +98,33 @@ const ALL_DOC_TYPES = [
   "Other",
 ] as const;
 
-const FILL_ORDER = [
-  "paper_block_letters",
-  "paper_or_online",
-  "assisted_counter",
-  "portal_identity",
-] as const;
+const MODE_CHIPS: { mode: string; label: string; hint: string }[] = [
+  { mode: "all", label: "All services", hint: "Full catalog" },
+  { mode: "paper_block_letters", label: "Paper", hint: "Block letters" },
+  { mode: "paper_or_online", label: "Hybrid", hint: "Paper or online" },
+  { mode: "assisted_counter", label: "Counter", hint: "CSC assisted" },
+  { mode: "portal_identity", label: "Portal", hint: "Identity match" },
+];
+
+function serviceIcon(category?: string | null) {
+  const c = (category || "").toLowerCase();
+  if (c.includes("aadhaar")) return Fingerprint;
+  if (c.includes("transport") || c.includes("driving")) return Car;
+  if (c.includes("scheme")) return Landmark;
+  if (c.includes("grievance")) return MessageSquareWarning;
+  if (c.includes("tax") || c.includes("pan")) return FileText;
+  if (c.includes("election") || c.includes("voter")) return Vote;
+  if (c.includes("passport")) return IdCard;
+  if (c.includes("gazette") || c.includes("name")) return Scale;
+  if (c.includes("certificate") || c.includes("birth")) return Building2;
+  if (c.includes("ration") || c.includes("bank")) return Building2;
+  return PenLine;
+}
+
+function shortServiceTitle(title: string) {
+  const cut = title.split(/\s[—–-]\s/)[0]?.trim();
+  return cut || title;
+}
 
 type UploadRow = {
   file: File;
@@ -169,19 +200,12 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
   const [formReviewed, setFormReviewed] = useState(false);
   const [judgeMode, setJudgeMode] = useState(false);
   const [voiceFullOpen, setVoiceFullOpen] = useState(false);
+  const [modeFilter, setModeFilter] = useState<string>("all");
 
-  const servicesByMode = useMemo(() => {
-    const groups: { mode: string; items: Service[] }[] = [];
-    for (const mode of FILL_ORDER) {
-      const items = services.filter((s) => s.fill_mode === mode);
-      if (items.length) groups.push({ mode, items });
-    }
-    const rest = services.filter(
-      (s) => !s.fill_mode || !FILL_ORDER.includes(s.fill_mode as (typeof FILL_ORDER)[number])
-    );
-    if (rest.length) groups.push({ mode: "other", items: rest });
-    return groups;
-  }, [services]);
+  const filteredServices = useMemo(() => {
+    if (modeFilter === "all") return services;
+    return services.filter((s) => s.fill_mode === modeFilter);
+  }, [modeFilter, services]);
 
   const loadServices = useCallback(async () => {
     try {
@@ -606,9 +630,11 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         variant="desk"
         title="IdentityGraph Suvidha Desk"
         description={
-          service
-            ? `${service.title} · ${fillModeLabel(service.fill_mode) || "operator desk"} — voice, OCR, mismatch verify, portal pack`
-            : "Sarvam Epoch · CSC desk for India's still-manual identity forms"
+          step === 0
+            ? "Choose a scheme — then voice fill, OCR, verify, portal pack"
+            : service
+              ? `${shortServiceTitle(service.title)} · ${fillModeLabel(service.fill_mode) || "desk"}`
+              : "Sarvam Epoch · CSC desk for identity forms"
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -699,97 +725,123 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
       {step === 0 && (
         <div className="flex flex-col gap-5">
-          <div className="desk-notice flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col gap-1">
-              <p className="text-sm font-semibold text-primary">
-                Quick path for judges — Sanika Chavan RTO demo
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Loads fixtures → MATCH / VARIANT / CRITICAL / UNCERTAIN → portal
-                pack PDFs. No OCR API burn.
+          <div className="desk-catalog-hero">
+            <div className="desk-catalog-hero-copy">
+              <p className="desk-catalog-kicker">पहचान सेतु · desk catalog</p>
+              <h2 className="desk-catalog-title">Pick a service</h2>
+              <p className="desk-catalog-sub">
+                Voice fill → OCR docs → mismatch check → portal pack.
               </p>
             </div>
-            <Button
-              disabled={busy}
-              onClick={() => void runJudgeDemo()}
-              className="shrink-0 rounded-lg"
-            >
-              {busy ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
-              ) : (
-                <Sparkles data-icon="inline-start" />
-              )}
-              Run judge demo
-            </Button>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-3xl text-sm text-muted-foreground">
-              Select the service scheme. Catalog covers paper block-letter forms,
-              BLO/ERO offline, CSC-assisted portals, and identity-mismatch
-              remediation.
-            </p>
-            <Button disabled={!service} onClick={() => setStep(1)} className="rounded-lg">
-              Next — Application form
-              <ArrowRight data-icon="inline-end" />
-            </Button>
-          </div>
-          {servicesByMode.map((group) => (
-            <div key={group.mode} className="desk-panel overflow-hidden">
-              <div className="desk-panel-head">
-                {fillModeLabel(group.mode) || group.mode}
-              </div>
-              <div className="divide-y divide-border bg-card">
-                {group.items.map((s) => {
-                  const on = s.id === serviceId;
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => void selectService(s.id)}
-                      className={cn(
-                        "flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors sm:flex-row sm:items-center sm:justify-between",
-                        on
-                          ? "bg-secondary"
-                          : "bg-card hover:bg-muted/40"
-                      )}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {on ? (
-                            <span className="rounded-full border border-primary bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
-                              Selected
-                            </span>
-                          ) : null}
-                          {s.category ? (
-                            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                              {s.category}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="text-sm font-semibold text-foreground">
-                          {s.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{s.tagline}</p>
-                      </div>
-                      <div className="shrink-0 text-left text-[11px] text-muted-foreground sm:text-right">
-                        {s.official_form ? <p>{s.official_form}</p> : null}
-                        <p>
-                          Docs: {s.required_docs.join(" · ")} · {s.form_fields.length}{" "}
-                          fields
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="desk-catalog-hero-actions">
+              <Button
+                disabled={busy}
+                onClick={() => void runJudgeDemo()}
+                className="shrink-0 rounded-sm"
+              >
+                {busy ? (
+                  <Loader2 className="animate-spin" data-icon="inline-start" />
+                ) : (
+                  <Sparkles data-icon="inline-start" />
+                )}
+                Judge demo
+              </Button>
+              <Button
+                disabled={!service}
+                onClick={() => setStep(1)}
+                variant="secondary"
+                className="shrink-0 rounded-sm"
+              >
+                Continue
+                <ArrowRight data-icon="inline-end" />
+              </Button>
             </div>
-          ))}
-          <div className="flex justify-end">
-            <Button disabled={!service} onClick={() => setStep(1)} className="rounded-lg">
-              Next — Application form
-              <ArrowRight data-icon="inline-end" />
-            </Button>
           </div>
+
+          <div className="desk-mode-chips" role="tablist" aria-label="Filter by fill mode">
+            {MODE_CHIPS.map((chip) => {
+              const count =
+                chip.mode === "all"
+                  ? services.length
+                  : services.filter((s) => s.fill_mode === chip.mode).length;
+              if (chip.mode !== "all" && count === 0) return null;
+              const on = modeFilter === chip.mode;
+              return (
+                <button
+                  key={chip.mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => setModeFilter(chip.mode)}
+                  className={cn("desk-mode-chip", on && "is-active")}
+                >
+                  <span className="desk-mode-chip-label">{chip.label}</span>
+                  <span className="desk-mode-chip-meta">
+                    {chip.hint} · {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="desk-service-grid">
+            {filteredServices.map((s) => {
+              const on = s.id === serviceId;
+              const Icon = serviceIcon(s.category);
+              const title = shortServiceTitle(s.title);
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => void selectService(s.id)}
+                  className={cn("desk-service-tile", on && "is-selected")}
+                >
+                  <span className="desk-service-tile-icon" aria-hidden>
+                    <Icon className="size-5" />
+                  </span>
+                  <span className="desk-service-tile-body">
+                    <span className="desk-service-tile-cat">
+                      {s.category || fillModeLabel(s.fill_mode) || "Service"}
+                      {on ? <span className="desk-service-selected-dot" /> : null}
+                    </span>
+                    <span className="desk-service-tile-title">{title}</span>
+                    <span className="desk-service-tile-meta">
+                      <span>{s.required_docs.length} docs</span>
+                      <span aria-hidden>·</span>
+                      <span>{s.form_fields.length} fields</span>
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {service ? (
+            <div className="desk-catalog-footer">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#0b3d91]">
+                  Selected
+                </p>
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {service.title}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {fillModeLabel(service.fill_mode) || "Operator desk"}
+                  {" · "}
+                  {service.required_docs.slice(0, 3).join(", ")}
+                  {service.required_docs.length > 3 ? "…" : ""}
+                </p>
+              </div>
+              <Button
+                disabled={!service}
+                onClick={() => setStep(1)}
+                className="shrink-0 rounded-sm"
+              >
+                Next — Application form
+                <ArrowRight data-icon="inline-end" />
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
 
