@@ -87,7 +87,7 @@ SERVICES = {
             "wrong DL number or address without pincode still rejects."
         ),
         "required_docs": ["Driving License", "Aadhaar Card"],
-        "optional_docs": ["Bank Passbook", "Ration Card"],
+        "optional_docs": ["PAN Card", "Bank Passbook", "Ration Card"],
         "portal": {
             "name": "Parivahan Sarathi — Change of Address / Name in DL",
             "url": "https://sarathi.parivahan.gov.in",
@@ -106,6 +106,10 @@ SERVICES = {
              "prompt_hi": "अपना ड्राइविंग लाइसेंस नंबर बताइए।",
              "prompt_en": "Please say your driving licence number.",
              "high_stakes": False, "compare_to": "id_number", "compare_doc": "Driving License"},
+            {"key": "pan_number", "label": "PAN Number",
+             "prompt_hi": "दस अक्षर का पैन नंबर बताइए।",
+             "prompt_en": "Ten-character PAN number.",
+             "high_stakes": False, "compare_to": "id_number", "compare_doc": "PAN Card"},
             {"key": "dob", "label": "Date of Birth",
              "prompt_hi": "अपनी जन्म तिथि बताइए।",
              "prompt_en": "Please say your date of birth.",

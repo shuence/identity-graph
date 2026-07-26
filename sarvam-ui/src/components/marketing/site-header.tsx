@@ -12,10 +12,8 @@ import {
 } from "@/components/ui/sheet";
 
 const links = [
-  { href: "#platform", label: "How it works" },
-  { href: "#apis", label: "Outputs" },
-  { href: "#enterprise", label: "For officers" },
-  { href: "#research", label: "Why now" },
+  { href: "#pillars", label: "Steps" },
+  { href: "#platform", label: "Checks" },
 ];
 
 export function SiteHeader() {
@@ -45,13 +43,6 @@ export function SiteHeader() {
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Button
-            variant="ghost"
-            render={<Link href="/app" />}
-            nativeButton={false}
-          >
-            Cases
-          </Button>
           <Button render={<Link href="/app" />} nativeButton={false}>
             Open desk
           </Button>

@@ -4,9 +4,9 @@ import { cn } from "@/lib/utils";
 
 const labels: Record<CellStatus, string> = {
   match: "Match",
-  variant: "Harmless variant",
-  blocker: "Critical blocker",
-  uncertain: "Uncertain",
+  variant: "Variant",
+  blocker: "Risk",
+  uncertain: "Unsure",
   missing: "Missing",
 };
 

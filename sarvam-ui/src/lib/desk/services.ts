@@ -38,14 +38,16 @@ export const SERVICES: Service[] = [
     tagline: "Sarathi online apply + RTO counter with originals — Form 2 still published.",
     why: "MoRTH/Parivahan says change of address is applied ONLINE on Sarathi, then citizen visits RTO with originals. CMVR Form 2 (learner/DL/renewal/change of address or name) is still published as a downloadable form. CSC desks commonly type from DL + Aadhaar; wrong DL number or address without pincode still rejects.",
     required_docs: ["Driving License", "Aadhaar Card"],
-    optional_docs: ["Bank Passbook", "Ration Card"],
+    optional_docs: ["PAN Card", "Bank Passbook", "Ration Card"],
     portal: {
       name: "Parivahan Sarathi — Change of Address / Name in DL",
       url: "https://sarathi.parivahan.gov.in",
     },
     form_fields: [
       {"key": "full_name", "label": "Full Name", "high_stakes": true, "compare_to": "full_name", "prompt_hi": "अपना पूरा नाम बताइए।", "prompt_en": "Please say your full name."},
+      {"key": "father_name", "label": "Father's / Guardian's Name", "high_stakes": true, "compare_to": "father_name", "compare_doc": "Aadhaar Card", "prompt_hi": "अपने पिता या अभिभावक का नाम बताइए।", "prompt_en": "Please say your father's or guardian's name."},
       {"key": "dl_number", "label": "Driving Licence Number", "high_stakes": false, "compare_to": "id_number", "compare_doc": "Driving License", "prompt_hi": "अपना ड्राइविंग लाइसेंस नंबर बताइए।", "prompt_en": "Please say your driving licence number."},
+      {"key": "pan_number", "label": "PAN Number", "high_stakes": false, "compare_to": "id_number", "compare_doc": "PAN Card", "prompt_hi": "दस अक्षर का पैन नंबर बताइए।", "prompt_en": "Ten-character PAN number."},
       {"key": "dob", "label": "Date of Birth", "high_stakes": true, "compare_to": "dob", "prompt_hi": "अपनी जन्म तिथि बताइए।", "prompt_en": "Please say your date of birth."},
       {"key": "mobile", "label": "Mobile Number", "high_stakes": false, "compare_to": null, "prompt_hi": "अपना मोबाइल नंबर बताइए।", "prompt_en": "Please say your mobile number."},
       {"key": "change_type", "label": "What to Change", "high_stakes": false, "compare_to": null, "prompt_hi": "आप क्या बदलना चाहते हैं — नाम, पता, या दोनों?", "prompt_en": "What do you want to change — name, address, or both?"},
