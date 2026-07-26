@@ -277,41 +277,36 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background:
-    radial-gradient(120% 80% at 100% 0%, color-mix(in oklab, #ff9933 10%, transparent), transparent 55%),
+    radial-gradient(
+      90% 70% at 100% 0%,
+      color-mix(in oklab, var(--secondary) 90%, transparent),
+      transparent 60%
+    ),
     linear-gradient(
-      125deg,
-      color-mix(in oklab, var(--secondary) 80%, white) 0%,
-      white 48%,
-      color-mix(in oklab, #138808 6%, white) 100%
+      145deg,
+      color-mix(in oklab, var(--secondary) 55%, white) 0%,
+      white 100%
     );
   position: relative;
   overflow: hidden;
 }
 
-.desk-catalog-hero::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: linear-gradient(180deg, #ff9933, #ffffff 48%, #138808);
-}
-
 .desk-catalog-kicker {
   font-size: 0.6875rem;
-  font-weight: 650;
-  letter-spacing: 0.1em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--indigo-deep);
+  color: var(--muted-foreground);
 }
 
 .desk-catalog-title {
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
   font-family: var(--font-heading), var(--font-sans), sans-serif;
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   font-weight: 650;
   letter-spacing: -0.03em;
   color: var(--foreground);
-  line-height: 1.15;
+  line-height: 1.2;
 }
 
 .desk-pipeline {
@@ -334,8 +329,8 @@
   width: 1.15rem;
   height: 1.15rem;
   margin-right: 0.3rem;
-  border-radius: 2px;
-  background: var(--indigo-deep);
+  border-radius: 999px;
+  background: var(--primary);
   color: white;
   font-size: 0.625rem;
   font-weight: 700;
@@ -345,7 +340,7 @@
 .desk-pipeline-sep {
   width: 0.85rem;
   height: 1px;
-  background: color-mix(in oklab, var(--indigo-deep) 35%, var(--border));
+  background: color-mix(in oklab, var(--primary) 30%, var(--border));
 }
 
 .desk-judge-card {
@@ -354,8 +349,8 @@
   gap: 0.75rem;
   min-width: min(100%, 15rem);
   padding: 0.85rem 1rem;
-  border: 1px solid color-mix(in oklab, var(--indigo-deep) 35%, var(--border));
-  border-radius: 2px;
+  border: 1px solid color-mix(in oklab, var(--primary) 28%, var(--border));
+  border-radius: var(--radius-lg);
   background: white;
   color: var(--foreground);
   text-align: left;
@@ -365,7 +360,7 @@
 
 .desk-judge-card:hover:not(:disabled) {
   background: color-mix(in oklab, var(--secondary) 55%, white);
-  border-color: var(--indigo-deep);
+  border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
   transform: translateY(-1px);
 }
 
@@ -380,8 +375,8 @@
   justify-content: center;
   width: 2.35rem;
   height: 2.35rem;
-  border-radius: 2px;
-  background: var(--indigo-deep);
+  border-radius: var(--radius-md);
+  background: var(--primary);
   color: white;
   flex-shrink: 0;
 }

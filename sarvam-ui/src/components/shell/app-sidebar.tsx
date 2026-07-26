@@ -78,9 +78,9 @@ export function AppSidebar() {
       <SidebarFooter className="p-3">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton render={<Link href="/" />} tooltip="Product site">
+            <SidebarMenuButton render={<Link href="/" />} tooltip="Home">
               <Home />
-              <span>Product site</span>
+              <span>Home</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
