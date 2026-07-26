@@ -128,6 +128,33 @@ def test_dl_regex_fallback():
     assert "20190045678" in out["id_number"].replace(" ", "")
 
 
+def test_passbook_opening_date_is_not_dob():
+    """Account opening date must not become dob — classic passbook OCR footgun."""
+    ocr = """
+    STATE BANK OF INDIA
+    Account Holder: SANIKA CHAVAN
+    A/C No: 12345678901
+    Account Opening Date: 12/03/2019
+    Address: Aurangabad Maharashtra
+    """
+    fields = {
+        "full_name": "SANIKA CHAVAN",
+        "father_name": "UNCERTAIN",
+        "dob": "12/03/2019",  # LLM wrongly used opening date
+        "address": "Aurangabad Maharashtra",
+        "id_number": "12345678901",
+        "confidence_notes": "",
+    }
+    out = regex_fallback_fields(ocr, "Bank Passbook", fields)
+    assert out["dob"] == "UNCERTAIN"
+    assert out["id_number"] == "12345678901"
+
+    # Explicit DOB label (rare) should still be kept
+    ocr_dob = ocr + "\nDate of Birth: 15/08/2001\n"
+    out2 = regex_fallback_fields(ocr_dob, "Bank Passbook", fields)
+    assert out2["dob"] == "15/08/2001"
+
+
 def test_filter_form_answers_only_service_keys():
     service = get_service("rto_dl_update")
     raw = json.loads((SAMPLE / "sample_form_sanika.json").read_text())

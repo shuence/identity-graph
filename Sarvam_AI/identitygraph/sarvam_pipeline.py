@@ -115,6 +115,9 @@ Return ONLY a JSON object. No markdown fences. No explanation.
 
 id_number: Aadhaar=12 digits, PAN=ABCDE1234F, Bank=account number, DL=licence number.
 Prefer a noisy readable value over UNCERTAIN when text is present.
+Bank passbook / statement: dob is almost never printed. Account opening date,
+A/C open date, CIF date, statement date, or transaction date are NOT date of birth —
+leave dob as UNCERTAIN unless the OCR literally says Date of Birth / DOB.
 If the scan is handwritten / filled-in form / block letters:
 - Read carefully; do NOT invent neat spellings that are not supported by the OCR.
 - If a character is ambiguous, keep UNCERTAIN for that field.
@@ -144,7 +147,12 @@ def extract_fields(
     hints = {
         "Aadhaar Card": "Aadhaar card. Need full_name, dob, 12-digit id_number, address, father/husband name.",
         "PAN Card": "PAN card. Need full_name, father_name, dob, PAN id_number. Address usually absent.",
-        "Bank Passbook": "Bank passbook/statement. Need account holder full_name, address, account id_number.",
+        "Bank Passbook": (
+            "Bank passbook/statement first page. Need account holder full_name, "
+            "address, and account id_number (A/C No). "
+            "dob MUST be UNCERTAIN — do NOT use Account Opening Date / A/C Open / "
+            "Date of Issue / As on date / statement date as dob."
+        ),
         "Driving License": "Driving licence. Need full_name, dob, DL id_number, address.",
         "Voter ID": "Voter ID / EPIC. Need full_name, father/husband name, dob or age, address, EPIC id_number.",
         "Ration Card": "Ration card. Need household head / member full_name, address, ration card id_number.",
@@ -228,6 +236,34 @@ def _parse_json_reply(raw: str) -> dict:
     return data
 
 
+def _dob_from_labeled_ocr(text: str) -> str | None:
+    """Only accept dates next to an explicit DOB label."""
+    m = re.search(
+        r"(?:Date\s*of\s*Birth|D\.?\s*O\.?\s*B\.?|जन्म\s*तिथि|जन्मतिथि)"
+        r"\s*[:\-–]?\s*(\d{2}[/-]\d{2}[/-]\d{4})",
+        text or "",
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).replace("-", "/")
+    return None
+
+
+def _scrub_bank_passbook_dob(ocr_text: str, fields: dict) -> dict:
+    """Passbooks print opening/statement dates — those are not DOB."""
+    out = dict(fields)
+    labeled = _dob_from_labeled_ocr(ocr_text)
+    if labeled:
+        out["dob"] = labeled
+        return out
+    if not _is_uncertain(out.get("dob")):
+        note = (out.get("confidence_notes") or "").strip()
+        cleared = "cleared dob — passbook opening/statement date ≠ birth date"
+        out["confidence_notes"] = f"{note}; {cleared}".strip("; ") if note else cleared
+    out["dob"] = "UNCERTAIN"
+    return out
+
+
 def regex_fallback_fields(ocr_text: str, doc_type: str, fields: dict) -> dict:
     """Fill gaps and override hallucinated IDs when OCR has a clear pattern."""
     out = dict(fields)
@@ -276,10 +312,24 @@ def regex_fallback_fields(ocr_text: str, doc_type: str, fields: dict) -> dict:
                 notes_extra.append(f"Overrode LLM id_number {current!r} with OCR {ocr_id!r}")
             out["id_number"] = ocr_id
 
-    if _is_uncertain(out.get("dob")):
-        m = re.search(r"\b(\d{2}[/-]\d{2}[/-]\d{4})\b", text)
-        if m:
-            out["dob"] = m.group(1).replace("-", "/")
+    # DOB: never grab a naked date on passbooks (opening date looks identical).
+    if doc_type == "Bank Passbook":
+        out = _scrub_bank_passbook_dob(text, out)
+    elif _is_uncertain(out.get("dob")):
+        labeled = _dob_from_labeled_ocr(text)
+        if labeled:
+            out["dob"] = labeled
+        elif doc_type in (
+            "Aadhaar Card",
+            "PAN Card",
+            "Driving License",
+            "Voter ID",
+            "School Certificate",
+            "Passport",
+        ):
+            m = re.search(r"\b(\d{2}[/-]\d{2}[/-]\d{4})\b", text)
+            if m:
+                out["dob"] = m.group(1).replace("-", "/")
 
     if _is_uncertain(out.get("full_name")):
         for pat in (
