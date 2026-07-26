@@ -277,26 +277,26 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       setReviewed(true);
       setJudgeMode(true);
       setFormOcrNote(
-        `Judge demo: ${demo.citizen || "Sanika Chavan"} — fixtures loaded (no API burn)`
+        `Sample loaded · ${demo.citizen || "Sanika Chavan"}`
       );
       setUploads([]);
       setNotes(
-        "Judge demo: Sanika Chavan RTO address update. Blockers/variants are intentional — show MATCH / VARIANT / CRITICAL / UNCERTAIN."
+        "RTO address update sample — blockers and variants are intentional."
       );
       const v = await verifyCase({
         service_id: id,
         form_answers: demo.form_answers,
         extractions: demo.extractions,
         operator_notes:
-          "Judge demo pack — Suvidha desk caught mismatches before portal upload.",
+          "Desk caught identity mismatches before portal upload.",
       });
       setResult(v);
       setStep(4);
       toast.success(
-        `Judge demo ready · ${Math.round(v.knowledge.score)} · ${v.knowledge.grade} · ${v.cross_document.summary.blockers} blocker(s)`
+        `Ready · ${Math.round(v.knowledge.score)} · ${v.knowledge.grade}`
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Judge demo failed");
+      toast.error(e instanceof Error ? e.message : "Demo failed");
     } finally {
       setBusy(false);
     }
@@ -644,13 +644,11 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
       <PageHeader
         variant="desk"
-        title="IdentityGraph Suvidha Desk"
+        title="Suvidha Desk"
         description={
-          step === 0
-            ? "Pick a scheme · voice fill · verify · portal pack"
-            : service
-              ? `${shortServiceTitle(service.title)} · ${fillModeLabel(service.fill_mode) || "desk"}`
-              : "Sarvam Epoch · CSC desk for identity forms"
+          service
+            ? shortServiceTitle(service.title)
+            : "Pick a service to start"
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -666,7 +664,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               ) : (
                 <Sparkles data-icon="inline-start" />
               )}
-              Judge demo
+              Quick demo
             </Button>
             <Badge
               variant="secondary"
@@ -735,17 +733,17 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         <div className="flex flex-col gap-4">
           <div className="desk-catalog-hero">
             <div className="desk-catalog-hero-copy">
-              <p className="desk-catalog-kicker">पहचान सेतु</p>
-              <h2 className="desk-catalog-title">Choose a desk service</h2>
+              <p className="desk-catalog-kicker">Service catalog</p>
+              <h2 className="desk-catalog-title">What is the citizen here for?</h2>
               <ol className="desk-pipeline" aria-label="What happens next">
                 <li>
                   <span className="desk-pipeline-num">1</span>
-                  Voice form
+                  Form
                 </li>
                 <li aria-hidden className="desk-pipeline-sep" />
                 <li>
                   <span className="desk-pipeline-num">2</span>
-                  OCR docs
+                  Docs
                 </li>
                 <li aria-hidden className="desk-pipeline-sep" />
                 <li>
@@ -755,7 +753,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 <li aria-hidden className="desk-pipeline-sep" />
                 <li>
                   <span className="desk-pipeline-num">4</span>
-                  Portal pack
+                  Pack
                 </li>
               </ol>
             </div>
@@ -773,8 +771,10 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 )}
               </span>
               <span className="desk-judge-card-body">
-                <span className="desk-judge-card-title">Judge demo</span>
-                <span className="desk-judge-card-sub">90s · Sanika RTO fixtures</span>
+                <span className="desk-judge-card-title">Quick demo</span>
+                <span className="desk-judge-card-sub">
+                  RTO address update · sample pack
+                </span>
               </span>
               <ArrowRight className="size-4 shrink-0 opacity-70" aria-hidden />
             </button>
@@ -873,9 +873,9 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               <Button
                 disabled={!service}
                 onClick={() => setStep(1)}
-                className="shrink-0 rounded-sm"
+                className="shrink-0 rounded-lg"
               >
-                Start application
+                Continue
                 <ArrowRight data-icon="inline-end" />
               </Button>
             </div>
@@ -1832,7 +1832,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 {impact.ready ? "Portal pack ready" : "Portal pack with caveats"}
                 {judgeMode ? (
                   <span className="border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
-                    Judge demo
+                    Sample
                   </span>
                 ) : null}
               </span>

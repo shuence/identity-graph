@@ -22,9 +22,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IdentityGraph India — catch identity rejections at the desk",
+  title: "IdentityGraph India · Suvidha Desk",
   description:
-    "Citizens still fill identity forms by hand. Portals reject name and address mismatches after the visit. Suvidha Desk catches the risk at the CSC counter — before upload.",
+    "Identity forms still fail after the citizen leaves. Suvidha Desk catches name and address mismatches at the CSC counter — before portal upload.",
 };
 
 export default function RootLayout({
