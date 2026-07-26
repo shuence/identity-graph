@@ -1,0 +1,30 @@
+[
+  {
+    "doc_type": "Driving License",
+    "source_file": "dl_sample.jpg",
+    "language": "en-IN",
+    "ocr_text": "(demo) MH DL",
+    "fields": {
+      "full_name": "Mohammed Irfan Shaikh",
+      "father_name": "Abdul Rahim Shaikh",
+      "dob": "14/06/1992",
+      "address": "H No 12, Andheri East, Mumbai 400069",
+      "id_number": "MH02 20110012345",
+      "confidence_notes": "DL front scanned clearly."
+    }
+  },
+  {
+    "doc_type": "Aadhaar Card",
+    "source_file": "aadhaar_sample.jpg",
+    "language": "hi-IN",
+    "ocr_text": "(demo) Aadhaar",
+    "fields": {
+      "full_name": "Mohammed Irfan Shaikh",
+      "father_name": "Abdul Rahim Shaikh",
+      "dob": "14/06/1992",
+      "address": "H No 42, Gandhi Nagar, Kurla West, Mumbai, Maharashtra 400070",
+      "id_number": "4821 6634 9012",
+      "confidence_notes": "Clear Aadhaar scan."
+    }
+  }
+]

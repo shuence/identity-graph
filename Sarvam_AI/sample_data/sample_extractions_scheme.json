@@ -1,0 +1,30 @@
+[
+  {
+    "doc_type": "Aadhaar Card",
+    "source_file": "aadhaar_sample.jpg",
+    "language": "hi-IN",
+    "ocr_text": "(demo)",
+    "fields": {
+      "full_name": "Mohammed Irfan Shaikh",
+      "father_name": "Abdul Rahim Shaikh",
+      "dob": "14/06/1992",
+      "address": "H No 42, Gandhi Nagar, Kurla West, Mumbai, Maharashtra 400070",
+      "id_number": "4821 6634 9012",
+      "confidence_notes": "Clear."
+    }
+  },
+  {
+    "doc_type": "Ration Card",
+    "source_file": "ration_sample.jpg",
+    "language": "mr-IN",
+    "ocr_text": "(demo)",
+    "fields": {
+      "full_name": "Mohamad Irfan Shaikh",
+      "father_name": "A R Shaikh",
+      "dob": "UNCERTAIN",
+      "address": "House 42, Gandhi Nagar, Kurla Paschim, Mumbai 400070",
+      "id_number": "MH-RC-2201-88431",
+      "confidence_notes": "Category OBC noted on card; DOB stamped over."
+    }
+  }
+]

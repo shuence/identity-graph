@@ -1,0 +1,238 @@
+"""Service templates — reusable across Aadhaar, RTO, schemes, complaints.
+
+Form fields + docs + portal. Validation rules live in knowledge_base.py
+so the same desk engine stays reliable when the service changes.
+"""
+
+from __future__ import annotations
+
+SERVICES = {
+    "link_mobile_aadhaar": {
+        "id": "link_mobile_aadhaar",
+        "title": "Link / Update Mobile on Aadhaar",
+        "tagline": "Seva Kendra classic — voice-fill, verify docs, portal pack.",
+        "why": (
+            "Citizens who struggle with block-letter forms still need to link a mobile "
+            "to Aadhaar. Operator used to fill by hand, compare Aadhaar/PAN/passbook, scan & upload."
+        ),
+        "required_docs": ["Aadhaar Card", "PAN Card", "Bank Passbook"],
+        "optional_docs": ["Voter ID", "Ration Card"],
+        "portal": {
+            "name": "UIDAI Self Service Update Portal / Aadhaar Seva Kendra",
+            "url": "https://myaadhaar.uidai.gov.in",
+        },
+        "demo_answers": "sample_form_answers.json",
+        "form_fields": [
+            {"key": "full_name", "label": "Full Name (as on Aadhaar)",
+             "prompt_hi": "अपना पूरा नाम बताइए, जैसा आधार कार्ड पर लिखा है।",
+             "prompt_en": "Please say your full name, exactly as written on Aadhaar.",
+             "high_stakes": True, "compare_to": "full_name", "compare_doc": "Aadhaar Card"},
+            {"key": "father_name", "label": "Father's / Guardian's Name",
+             "prompt_hi": "अपने पिता या अभिभावक का नाम बताइए।",
+             "prompt_en": "Please say your father's or guardian's name.",
+             "high_stakes": True, "compare_to": "father_name", "compare_doc": "Aadhaar Card"},
+            {"key": "dob", "label": "Date of Birth",
+             "prompt_hi": "अपनी जन्म तिथि बताइए — दिन, महीना, साल।",
+             "prompt_en": "Please say your date of birth — day, month, and year.",
+             "high_stakes": True, "compare_to": "dob", "compare_doc": "Aadhaar Card"},
+            {"key": "aadhaar_number", "label": "Aadhaar Number",
+             "prompt_hi": "अपना बारह अंकों का आधार नंबर बताइए।",
+             "prompt_en": "Please say your twelve-digit Aadhaar number.",
+             "high_stakes": True, "compare_to": "id_number", "compare_doc": "Aadhaar Card"},
+            {"key": "mobile", "label": "Mobile Number to Link",
+             "prompt_hi": "जिस मोबाइल नंबर को आधार से जोड़ना है, वह बताइए।",
+             "prompt_en": "Please say the mobile number you want to link to Aadhaar.",
+             "high_stakes": True, "compare_to": None},
+            {"key": "address", "label": "Current Address",
+             "prompt_hi": "अपना वर्तमान पता बताइए — घर नंबर, इलाका, शहर, पिनकोड।",
+             "prompt_en": "Please say your current address — house, locality, city, pincode.",
+             "high_stakes": False, "compare_to": "address", "compare_doc": "Aadhaar Card"},
+            {"key": "reason", "label": "Reason for Update",
+             "prompt_hi": "आप मोबाइल नंबर क्यों जोड़ या बदल रहे हैं?",
+             "prompt_en": "Why are you linking or changing this mobile number?",
+             "high_stakes": False, "compare_to": None},
+        ],
+    },
+    "rto_dl_update": {
+        "id": "rto_dl_update",
+        "title": "RTO — Driving Licence Address / Name Update",
+        "tagline": "Parivahan Sarathi desk — same manual pain, same validation need.",
+        "why": (
+            "RTO counters still run on paper/Sarathi forms. Citizen can't type; clerk copies "
+            "from DL + Aadhaar by hand. One wrong DL number or missing pincode = rejection."
+        ),
+        "required_docs": ["Driving License", "Aadhaar Card"],
+        "optional_docs": ["Bank Passbook", "Ration Card"],
+        "portal": {
+            "name": "Parivahan Sarathi — Change of Address / Name in DL",
+            "url": "https://sarathi.parivahan.gov.in",
+        },
+        "demo_answers": "sample_form_rto.json",
+        "form_fields": [
+            {"key": "full_name", "label": "Full Name",
+             "prompt_hi": "अपना पूरा नाम बताइए।",
+             "prompt_en": "Please say your full name.",
+             "high_stakes": True, "compare_to": "full_name"},
+            {"key": "dl_number", "label": "Driving Licence Number",
+             "prompt_hi": "अपना ड्राइविंग लाइसेंस नंबर बताइए।",
+             "prompt_en": "Please say your driving licence number.",
+             "high_stakes": True, "compare_to": "id_number", "compare_doc": "Driving License"},
+            {"key": "dob", "label": "Date of Birth",
+             "prompt_hi": "अपनी जन्म तिथि बताइए।",
+             "prompt_en": "Please say your date of birth.",
+             "high_stakes": True, "compare_to": "dob"},
+            {"key": "mobile", "label": "Mobile Number",
+             "prompt_hi": "अपना मोबाइल नंबर बताइए।",
+             "prompt_en": "Please say your mobile number.",
+             "high_stakes": True, "compare_to": None},
+            {"key": "change_type", "label": "What to Change",
+             "prompt_hi": "आप क्या बदलना चाहते हैं — नाम, पता, या दोनों?",
+             "prompt_en": "What do you want to change — name, address, or both?",
+             "high_stakes": True, "compare_to": None},
+            {"key": "old_address", "label": "Address on Current DL",
+             "prompt_hi": "लाइसेंस पर अभी कौन सा पता लिखा है?",
+             "prompt_en": "What address is currently printed on your licence?",
+             "high_stakes": False, "compare_to": "address", "compare_doc": "Driving License"},
+            {"key": "new_address", "label": "New Address (with pincode)",
+             "prompt_hi": "नया पता बताइए — पिनकोड ज़रूर बताएं।",
+             "prompt_en": "Please say your new address, including pincode.",
+             "high_stakes": True, "compare_to": "address", "compare_doc": "Aadhaar Card"},
+        ],
+    },
+    "scheme_apply": {
+        "id": "scheme_apply",
+        "title": "Gov Scheme Discovery + Darkhast (Application)",
+        "tagline": "Find the scheme, check eligibility, fill the application correctly.",
+        "why": (
+            "Citizens ask 'kaunsa scheme milega?' Operators guess, fill wrong portals, "
+            "applications bounce on income/category/Aadhaar-mobile mismatch. "
+            "Knowledge base makes eligibility + form accuracy checkable."
+        ),
+        "required_docs": ["Aadhaar Card", "Ration Card"],
+        "optional_docs": ["Bank Passbook", "School Certificate"],
+        "portal": {
+            "name": "National / State scheme portals (via CSC)",
+            "url": "https://www.myscheme.gov.in",
+        },
+        "demo_answers": "sample_form_scheme.json",
+        "form_fields": [
+            {"key": "full_name", "label": "Applicant Full Name",
+             "prompt_hi": "आवेदक का पूरा नाम बताइए।",
+             "prompt_en": "Please say the applicant's full name.",
+             "high_stakes": True, "compare_to": "full_name"},
+            {"key": "aadhaar_number", "label": "Aadhaar Number",
+             "prompt_hi": "आधार नंबर बताइए।",
+             "prompt_en": "Please say the Aadhaar number.",
+             "high_stakes": True, "compare_to": "id_number", "compare_doc": "Aadhaar Card"},
+            {"key": "dob", "label": "Date of Birth",
+             "prompt_hi": "जन्म तिथि बताइए।",
+             "prompt_en": "Please say date of birth.",
+             "high_stakes": True, "compare_to": "dob"},
+            {"key": "mobile", "label": "Mobile (Aadhaar-linked)",
+             "prompt_hi": "आधार से जुड़ा मोबाइल नंबर बताइए।",
+             "prompt_en": "Please say the Aadhaar-linked mobile number.",
+             "high_stakes": True, "compare_to": None},
+            {"key": "address", "label": "Address with pincode",
+             "prompt_hi": "पूरा पता पिनकोड के साथ बताइए।",
+             "prompt_en": "Please say full address with pincode.",
+             "high_stakes": True, "compare_to": "address"},
+            {"key": "scheme_name", "label": "Scheme Name",
+             "prompt_hi": "कौन सी योजना के लिए आवेदन करना है? जैसे पीएम किसान, आयुष्मान, ई-श्रम।",
+             "prompt_en": "Which scheme? e.g. PM-KISAN, Ayushman, e-Shram.",
+             "high_stakes": True, "compare_to": None},
+            {"key": "category", "label": "Category (SC/ST/OBC/EWS/General)",
+             "prompt_hi": "आपकी श्रेणी क्या है — अनुसूचित जाति, जनजाति, ओबीसी, ईडब्ल्यूएस या सामान्य?",
+             "prompt_en": "What is your category — SC, ST, OBC, EWS, or General?",
+             "high_stakes": True, "compare_to": None},
+            {"key": "annual_income", "label": "Approx Annual Family Income (₹)",
+             "prompt_hi": "परिवार की सालाना आय लगभग कितनी है?",
+             "prompt_en": "What is approximate annual family income in rupees?",
+             "high_stakes": True, "compare_to": None},
+        ],
+    },
+    "grievance_complaint": {
+        "id": "grievance_complaint",
+        "title": "File a Government Service Complaint",
+        "tagline": "When the update/scheme already failed — capture a factual, portal-ready grievance.",
+        "why": (
+            "After a rejected Aadhaar/RTO/scheme attempt, citizens need a clear complaint. "
+            "Vague darkhasts get closed. Knowledge base forces department, facts, desired outcome."
+        ),
+        "required_docs": ["Aadhaar Card"],
+        "optional_docs": ["Rejection letter", "Acknowledgement receipt"],
+        "portal": {
+            "name": "CPGRAMS / State public grievance portal",
+            "url": "https://pgportal.gov.in",
+        },
+        "demo_answers": "sample_form_complaint.json",
+        "form_fields": [
+            {"key": "full_name", "label": "Full Name",
+             "prompt_hi": "अपना नाम बताइए।",
+             "prompt_en": "Please say your name.",
+             "high_stakes": True, "compare_to": "full_name"},
+            {"key": "mobile", "label": "Mobile",
+             "prompt_hi": "मोबाइल नंबर बताइए।",
+             "prompt_en": "Please say your mobile number.",
+             "high_stakes": True, "compare_to": None},
+            {"key": "aadhaar_number", "label": "Aadhaar Number",
+             "prompt_hi": "आधार नंबर बताइए।",
+             "prompt_en": "Please say your Aadhaar number.",
+             "high_stakes": True, "compare_to": "id_number", "compare_doc": "Aadhaar Card"},
+            {"key": "department", "label": "Department / Office",
+             "prompt_hi": "किस विभाग या दफ्तर से शिकायत है — आधार, आरटीओ, योजना?",
+             "prompt_en": "Which department — Aadhaar, RTO, scheme office?",
+             "high_stakes": True, "compare_to": None},
+            {"key": "complaint_summary", "label": "What Happened (facts)",
+             "prompt_hi": "क्या समस्या हुई — तारीख और संदर्भ नंबर के साथ बताइए।",
+             "prompt_en": "What went wrong — include dates and any reference number.",
+             "high_stakes": True, "compare_to": None},
+            {"key": "desired_outcome", "label": "What You Want Done",
+             "prompt_hi": "आप क्या चाहते हैं — सुधार, स्टेटस, या दोबारा आवेदन?",
+             "prompt_en": "What outcome do you want — correction, status, or re-apply?",
+             "high_stakes": True, "compare_to": None},
+        ],
+    },
+    "pan_aadhaar_link": {
+        "id": "pan_aadhaar_link",
+        "title": "Link PAN with Aadhaar",
+        "tagline": "Same desk — tax portal, name-match sensitive.",
+        "why": "e-Filing and loan KYCs fail when PAN and Aadhaar names diverge.",
+        "required_docs": ["Aadhaar Card", "PAN Card"],
+        "optional_docs": ["Bank Passbook"],
+        "portal": {
+            "name": "Income Tax e-Filing — Link Aadhaar",
+            "url": "https://eportal.incometax.gov.in",
+        },
+        "demo_answers": "sample_form_pan.json",
+        "form_fields": [
+            {"key": "full_name", "label": "Full Name (as on PAN)",
+             "prompt_hi": "पैन पर लिखा पूरा नाम बताइए।",
+             "prompt_en": "Full name as on PAN.",
+             "high_stakes": True, "compare_to": "full_name"},
+            {"key": "pan_number", "label": "PAN Number",
+             "prompt_hi": "दस अक्षर का पैन नंबर बताइए।",
+             "prompt_en": "Ten-character PAN number.",
+             "high_stakes": True, "compare_to": "id_number", "compare_doc": "PAN Card"},
+            {"key": "aadhaar_number", "label": "Aadhaar Number",
+             "prompt_hi": "आधार नंबर बताइए।",
+             "prompt_en": "Aadhaar number.",
+             "high_stakes": True, "compare_to": "id_number", "compare_doc": "Aadhaar Card"},
+            {"key": "dob", "label": "Date of Birth",
+             "prompt_hi": "जन्म तिथि बताइए।",
+             "prompt_en": "Date of birth.",
+             "high_stakes": True, "compare_to": "dob"},
+            {"key": "mobile", "label": "Registered Mobile",
+             "prompt_hi": "रजिस्टर्ड मोबाइल बताइए।",
+             "prompt_en": "Registered mobile.",
+             "high_stakes": True, "compare_to": None},
+        ],
+    },
+}
+
+
+def get_service(service_id: str) -> dict:
+    return SERVICES[service_id]
+
+
+def list_services() -> list[dict]:
+    return list(SERVICES.values())

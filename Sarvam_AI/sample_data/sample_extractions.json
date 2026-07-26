@@ -1,0 +1,44 @@
+[
+  {
+    "doc_type": "Aadhaar Card",
+    "source_file": "aadhaar_sample.jpg",
+    "language": "hi-IN",
+    "ocr_text": "(demo) Aadhaar of Mohammed Irfan Shaikh",
+    "fields": {
+      "full_name": "Mohammed Irfan Shaikh",
+      "father_name": "Abdul Rahim Shaikh",
+      "dob": "14/06/1992",
+      "address": "H No 42, Gandhi Nagar, Kurla West, Mumbai, Maharashtra 400070",
+      "id_number": "4821 6634 9012",
+      "confidence_notes": "All fields clearly legible on Aadhaar."
+    }
+  },
+  {
+    "doc_type": "PAN Card",
+    "source_file": "pan_sample.jpg",
+    "language": "en-IN",
+    "ocr_text": "(demo) PAN of Mohd Irfan Shaikh",
+    "fields": {
+      "full_name": "Mohd Irfan Shaikh",
+      "father_name": "Abdul Rahim Sheikh",
+      "dob": "14-06-1992",
+      "address": "UNCERTAIN",
+      "id_number": "BXQPS4821K",
+      "confidence_notes": "PAN uses abbreviated 'Mohd'; no address on card."
+    }
+  },
+  {
+    "doc_type": "Bank Passbook",
+    "source_file": "passbook_sample.jpg",
+    "language": "en-IN",
+    "ocr_text": "(demo) SBI passbook first page",
+    "fields": {
+      "full_name": "Mohammed Irfan Shaik",
+      "father_name": "Abdul Rahim Shaikh",
+      "dob": "UNCERTAIN",
+      "address": "42 Gandhi Nagar, Kurla (W), Mumbai 400070",
+      "id_number": "XXXXXX78421",
+      "confidence_notes": "Passbook photo slightly skewed; DOB not printed on first page."
+    }
+  }
+]
