@@ -504,5 +504,4 @@ def process_scanned_form(
         "language": lang_used,
         "ocr_text": ocr_text,
         "form_answers": answers,
-        "demo_fallback": False,
     }

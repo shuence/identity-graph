@@ -78,38 +78,19 @@ def test_verify_sanika_rto_excludes_form_from_cross_doc():
     assert "mobile" in body["form_verification"]["approved_fields"]
 
 
-def test_extract_form_requires_api_key_without_demo():
+def test_extract_form_requires_api_key():
     form_img = SAMPLE / "sanika_chavan_filled_form.png"
     with patch("api._api_key", return_value=""):
         res = client.post(
             "/extract/form",
-            data={"service_id": "rto_dl_update", "language": "en-IN", "demo": "false"},
+            data={"service_id": "rto_dl_update", "language": "en-IN"},
             files={"file": ("sanika_chavan_filled_form.png", form_img.read_bytes(), "image/png")},
         )
     assert res.status_code == 503
     assert "API_KEY" in res.json()["detail"]
 
 
-def test_extract_form_demo_explicit():
-    form_img = SAMPLE / "sanika_chavan_filled_form.png"
-    with patch("api._api_key", return_value=""):
-        res = client.post(
-            "/extract/form",
-            data={"service_id": "rto_dl_update", "language": "en-IN", "demo": "true"},
-            files={"file": ("sanika_chavan_filled_form.png", form_img.read_bytes(), "image/png")},
-        )
-    assert res.status_code == 200
-    data = res.json()
-    assert data["demo_fallback"] is True
-    assert data["needs_review"] is True
-    assert data["form_answers"]["full_name"]
-    assert data["form_answers"]["mobile"] == "7887403910"
-    service = get_service("rto_dl_update")
-    keys = {f["key"] for f in service["form_fields"]}
-    assert set(data["form_answers"].keys()) <= keys
-
-
-def test_extract_documents_requires_api_key_without_demo():
+def test_extract_documents_requires_api_key():
     form_img = SAMPLE / "sanika_chavan_filled_form.png"
     with patch("api._api_key", return_value=""):
         res = client.post(
@@ -118,67 +99,12 @@ def test_extract_documents_requires_api_key_without_demo():
                 "service_id": "link_mobile_aadhaar",
                 "doc_types": json.dumps(["Bank Passbook"]),
                 "languages": json.dumps(["en-IN"]),
-                "demo": "false",
             },
             files=[
                 ("files", ("Bank details (1).jpg", form_img.read_bytes(), "image/jpeg")),
             ],
         )
     assert res.status_code == 503
-
-
-def test_extract_documents_demo_uses_sanika_when_filename_matches():
-    form_img = SAMPLE / "sanika_chavan_filled_form.png"
-    with patch("api._api_key", return_value=""):
-        res = client.post(
-            "/extract/documents",
-            data={
-                "service_id": "link_mobile_aadhaar",
-                "doc_types": json.dumps(
-                    ["Bank Passbook", "PAN Card", "Aadhaar Card"]
-                ),
-                "languages": json.dumps(["en-IN", "en-IN", "en-IN"]),
-                "demo": "true",
-            },
-            files=[
-                ("files", ("Bank details (1).jpg", form_img.read_bytes(), "image/jpeg")),
-                ("files", ("PAN_CARD_SanikaChavan.pdf", form_img.read_bytes(), "application/pdf")),
-                ("files", ("AdharCard_SanikaChavan.pdf", form_img.read_bytes(), "application/pdf")),
-            ],
-        )
-    assert res.status_code == 200
-    data = res.json()
-    assert data["demo_fallback"] is True
-    by_type = {e["doc_type"]: e for e in data["extractions"]}
-    assert "Sanika" in by_type["Bank Passbook"]["fields"]["full_name"]
-    assert "Sanika" in by_type["Aadhaar Card"]["fields"]["full_name"]
-    assert "Mohammed" not in by_type["Bank Passbook"]["fields"]["full_name"]
-
-
-def test_extract_documents_demo_fallback():
-    form_img = SAMPLE / "sanika_chavan_filled_form.png"
-    with patch("api._api_key", return_value=""):
-        res = client.post(
-            "/extract/documents",
-            data={
-                "service_id": "rto_dl_update",
-                "doc_types": json.dumps(["Aadhaar Card", "Driving License"]),
-                "languages": json.dumps(["en-IN", "en-IN"]),
-                "demo": "true",
-            },
-            files=[
-                ("files", ("aadhaar_sanika.jpg", form_img.read_bytes(), "image/jpeg")),
-                ("files", ("dl_sanika.jpg", form_img.read_bytes(), "image/jpeg")),
-            ],
-        )
-    assert res.status_code == 200
-    data = res.json()
-    assert data["demo_fallback"] is True
-    assert len(data["extractions"]) == 2
-    assert data["extractions"][0]["doc_type"] == "Aadhaar Card"
-    assert "Scanned Application Form" not in {
-        e["doc_type"] for e in data["extractions"]
-    }
 
 
 def test_guess_doc_type():

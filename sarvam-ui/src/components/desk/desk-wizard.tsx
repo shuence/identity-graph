@@ -9,8 +9,10 @@ import {
   FileScan,
   Loader2,
   ScanSearch,
+  Trash2,
   Upload,
   Volume2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shell/page-header";
@@ -216,6 +218,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       return;
     }
     setBusy(true);
+    toast.message(`Running OCR on ${uploads.length} document(s)…`);
     try {
       const out = await extractDocuments({
         files: uploads.map((u) => u.file),
@@ -231,15 +234,51 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       }
       if (out.extractions.length) {
         toast.success(
-          `OCR complete — ${out.extractions.length} document(s). Review fields next.`
+          `OCR complete — ${out.extractions.length} of ${uploads.length} document(s). Review fields next.`
         );
         setStep(3);
+      } else {
+        toast.error("No documents extracted — check files and try again");
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "OCR failed");
     } finally {
       setBusy(false);
     }
+  }
+
+  function addUploadFiles(files: File[]) {
+    if (!service || files.length === 0) return;
+    const preferred = [...service.required_docs, ...service.optional_docs];
+    const existingNames = new Set(uploads.map((u) => `${u.file.name}:${u.file.size}`));
+    const incoming = files.filter(
+      (f) => !existingNames.has(`${f.name}:${f.size}`)
+    );
+    if (!incoming.length) {
+      toast.message("Those files are already in the list");
+      return;
+    }
+    const start = uploads.length;
+    const rows: UploadRow[] = incoming.map((file, i) => ({
+      file,
+      docType:
+        guessDocType(file.name, preferred) ||
+        preferred[start + i] ||
+        preferred[Math.min(start + i, preferred.length - 1)] ||
+        preferred[0] ||
+        "Other",
+      handwritten: false,
+    }));
+    setUploads((prev) => [...prev, ...rows]);
+    setExtractions([]);
+    setReviewed(false);
+    toast.success(`Added ${rows.length} document(s) · ${start + rows.length} total`);
+  }
+
+  function removeUpload(index: number) {
+    setUploads((prev) => prev.filter((_, i) => i !== index));
+    setExtractions([]);
+    setReviewed(false);
   }
 
   function updateField(docIndex: number, key: string, value: string) {
@@ -694,14 +733,15 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <p className="text-sm text-muted-foreground">
-                Required: {service.required_docs.join(", ")}. Mark{" "}
-                <strong>Handwritten</strong> for filled forms / block letters — uses
-                Indic OCR retries and stricter UNCERTAIN handling.
+                Add multiple KYC scans (Aadhaar, PAN, passbook, DL…). Select
+                several files at once, or keep adding. Required:{" "}
+                {service.required_docs.join(", ")}. Mark{" "}
+                <strong>Handwritten</strong> for filled forms / block letters.
                 {!apiLive ? (
                   <>
                     {" "}
                     <span className="text-status-uncertain">
-                      No API_KEY yet — live OCR is disabled. Add{" "}
+                      No API_KEY — live OCR disabled. Add{" "}
                       <code className="rounded bg-muted px-1">API_KEY</code> in{" "}
                       <code className="rounded bg-muted px-1">Sarvam_AI/.env</code>.
                     </span>
@@ -710,45 +750,62 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               </p>
 
               <div className="flex flex-col gap-3 rounded-xl border border-dashed border-primary/30 bg-secondary/20 p-4">
-                <Label htmlFor="docs">Scans (JPG / JPEG / PNG / WebP / PDF)</Label>
-                <input
-                  id="docs"
-                  type="file"
-                  accept={SCAN_ACCEPT}
-                  multiple
-                  className="block w-full cursor-pointer text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || []);
-                    const preferred = [
-                      ...service.required_docs,
-                      ...service.optional_docs,
-                    ];
-                    setUploads(
-                      files.map((file, i) => ({
-                        file,
-                        docType:
-                          guessDocType(file.name, preferred) ||
-                          preferred[i] ||
-                          preferred[preferred.length - 1] ||
-                          "Other",
-                        handwritten: false,
-                      }))
-                    );
-                    setExtractions([]);
-                    setReviewed(false);
-                    if (files.length) {
-                      toast.success(`${files.length} file(s) selected`);
-                    }
-                  }}
-                />
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="docs">
+                      Add scans (JPG / JPEG / PNG / WebP / PDF) — multiple OK
+                    </Label>
+                    <input
+                      id="docs"
+                      type="file"
+                      accept={SCAN_ACCEPT}
+                      multiple
+                      className="block w-full max-w-md cursor-pointer text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        addUploadFiles(files);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+                  {uploads.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        setUploads([]);
+                        setExtractions([]);
+                        setReviewed(false);
+                      }}
+                    >
+                      <Trash2 data-icon="inline-start" />
+                      Clear all
+                    </Button>
+                  ) : null}
+                </div>
+
+                {uploads.length > 0 ? (
+                  <p className="text-xs font-medium text-foreground">
+                    {uploads.length} document{uploads.length === 1 ? "" : "s"} queued
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No documents yet — pick one or more files above.
+                  </p>
+                )}
 
                 {uploads.map((u, i) => (
                   <div
-                    key={`${u.file.name}-${i}`}
+                    key={`${u.file.name}-${u.file.size}-${i}`}
                     className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-3"
                   >
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                      {u.file.name}
+                      {i + 1}. {u.file.name}
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        {(u.file.size / 1024).toFixed(0)} KB
+                      </span>
                     </span>
                     <select
                       className="h-8 rounded-md border border-input bg-background px-2 text-xs"
@@ -779,8 +836,19 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                           setUploads(next);
                         }}
                       />
-                      Handwritten / filled form
+                      Handwritten
                     </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2"
+                      disabled={busy}
+                      onClick={() => removeUpload(i)}
+                      title="Remove"
+                    >
+                      <X className="size-4" />
+                    </Button>
                   </div>
                 ))}
 
@@ -794,9 +862,15 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     ) : (
                       <ScanSearch data-icon="inline-start" />
                     )}
-                    Run Sarvam Vision + 30B OCR
+                    Run Sarvam OCR on {uploads.length || ""} file
+                    {uploads.length === 1 ? "" : "s"}
                   </Button>
                 </div>
+                {busy ? (
+                  <p className="text-xs text-muted-foreground">
+                    Live Vision can take 1–2 min per file — leave this tab open.
+                  </p>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -817,7 +891,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             </div>
             {extractions.length < 1 ? (
               <p className="text-sm text-status-uncertain">
-                Run verification unlocks after OCR finishes. Live OCR can take 1–2 min per file.
+                Verification unlocks after OCR finishes.
               </p>
             ) : null}
           </div>

@@ -126,8 +126,7 @@ def _require_sarvam_key() -> str:
     if not key:
         raise HTTPException(
             503,
-            "Sarvam API key not configured. Set API_KEY in Sarvam_AI/.env for live OCR, "
-            "or click Demo OCR / Load demo documents for sample data.",
+            "Sarvam API key not configured. Set API_KEY in Sarvam_AI/.env for live OCR.",
         )
     return key
 
@@ -387,35 +386,12 @@ async def extract_form(
     service_id: str = Form(...),
     file: UploadFile = File(...),
     language: str = Form("en-IN"),
-    demo: str = Form("false"),
 ):
     """OCR a scanned application form → service form_answers for operator review."""
     try:
         service = get_service(service_id)
     except KeyError as exc:
         raise HTTPException(404, f"Unknown service: {service_id}") from exc
-
-    force_demo = demo.lower() in ("1", "true", "yes")
-
-    # Demo ONLY when explicitly requested — never silently swap another citizen's data.
-    if force_demo:
-        form_path = _demo_form_path(service)
-        if not form_path.exists():
-            raise HTTPException(404, "Demo form answers missing")
-        answers = _filter_form_answers(service, json.loads(form_path.read_text()))
-        if _prefer_sanika_demo(service_id, [file.filename or ""]):
-            sanika = SAMPLE / "sample_form_sanika.json"
-            if sanika.exists():
-                answers = _filter_form_answers(service, json.loads(sanika.read_text()))
-        return {
-            "service_id": service_id,
-            "source_file": file.filename or "demo_form.png",
-            "language": language,
-            "ocr_text": "(demo) Sample form answers — not live OCR of your upload.",
-            "form_answers": answers,
-            "demo_fallback": True,
-            "needs_review": True,
-        }
 
     _require_sarvam_key()
     from identitygraph.sarvam_pipeline import get_client, process_scanned_form
@@ -438,7 +414,6 @@ async def extract_form(
         result["source_file"] = original
         result["service_id"] = service_id
         result["needs_review"] = True
-        result["demo_fallback"] = False
         result["form_answers"] = _filter_form_answers(
             service, result.get("form_answers") or {}
         )
@@ -463,7 +438,6 @@ async def extract_documents(
     files: list[UploadFile] = File(...),
     doc_types: str = Form("[]"),
     languages: str = Form("[]"),
-    demo: str = Form("false"),
 ):
     """OCR multiple KYC documents. Returns extractions (+ per-file failures)."""
     try:
@@ -483,46 +457,6 @@ async def extract_documents(
     preferred = list(service.get("required_docs") or []) + list(
         service.get("optional_docs") or []
     )
-    force_demo = demo.lower() in ("1", "true", "yes")
-    filenames = [f.filename or f"file_{i}" for i, f in enumerate(files)]
-
-    # Demo ONLY when explicitly requested — live OCR never substitutes fixtures.
-    if force_demo:
-        all_docs = _load_demo_extractions(service_id, filenames)
-        if not all_docs:
-            raise HTTPException(404, "Demo extractions missing")
-        requested = [
-            (
-                type_list[i]
-                if i < len(type_list)
-                else _guess_doc_type(f.filename or "", preferred)
-            )
-            for i, f in enumerate(files)
-        ]
-        by_type = {e["doc_type"]: e for e in all_docs}
-        picked = []
-        for i, dtype in enumerate(requested):
-            if dtype in by_type:
-                rec = dict(by_type[dtype])
-                rec["source_file"] = files[i].filename or rec.get("source_file")
-                rec["demo_fallback"] = True
-                picked.append(rec)
-            elif all_docs:
-                rec = dict(all_docs[i % len(all_docs)])
-                rec["doc_type"] = dtype
-                rec["source_file"] = files[i].filename or rec.get("source_file")
-                rec["demo_fallback"] = True
-                picked.append(rec)
-        return {
-            "service_id": service_id,
-            "extractions": picked or [{**e, "demo_fallback": True} for e in all_docs],
-            "failures": [],
-            "demo_fallback": True,
-            "message": (
-                "Demo fixtures loaded (not OCR of your files). "
-                "Set API_KEY in Sarvam_AI/.env and click OCR documents for live extraction."
-            ),
-        }
 
     _require_sarvam_key()
     from identitygraph.sarvam_pipeline import get_client, process_document
@@ -543,7 +477,6 @@ async def extract_documents(
             path, original = await _save_upload(upload)
             rec = process_document(client, path, dtype, language=lang)
             rec["source_file"] = original
-            rec["demo_fallback"] = False
             extractions.append(rec)
         except Exception as exc:
             failures.append({
@@ -562,7 +495,6 @@ async def extract_documents(
         "service_id": service_id,
         "extractions": _id_document_extractions(extractions),
         "failures": failures,
-        "demo_fallback": False,
     }
 
 
