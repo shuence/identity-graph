@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { GitCompare, Home, LayoutDashboard } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import {
+  FolderOpen,
+  GitCompare,
+  Home,
+  LayoutDashboard,
+  LogOut,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -17,13 +24,21 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { fetchMe, logout, type AuthUser } from "@/lib/api/auth";
 
 const nav = [
   { title: "Operator desk", href: "/app", icon: LayoutDashboard },
+  { title: "My cases", href: "/app/cases", icon: FolderOpen },
 ];
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    void fetchMe().then(setUser);
+  }, []);
 
   return (
     <Sidebar collapsible="icon">
@@ -43,7 +58,7 @@ export function AppSidebar() {
                   IdentityGraph
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
-                  Suvidha Desk
+                  {user?.csc_name || "Suvidha Desk"}
                 </span>
               </div>
             </SidebarMenuButton>
@@ -61,7 +76,8 @@ export function AppSidebar() {
                   <SidebarMenuButton
                     isActive={
                       pathname === item.href ||
-                      pathname.startsWith(`${item.href}/`)
+                      (item.href !== "/app" &&
+                        pathname.startsWith(`${item.href}/`))
                     }
                     tooltip={item.title}
                     render={<Link href={item.href} />}
@@ -76,7 +92,26 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-3">
+        {user ? (
+          <div className="mb-2 truncate px-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+            {user.name}
+          </div>
+        ) : null}
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip="Sign out"
+              onClick={() => {
+                void logout().then(() => {
+                  router.replace("/login");
+                  router.refresh();
+                });
+              }}
+            >
+              <LogOut />
+              <span>Sign out</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton render={<Link href="/" />} tooltip="Home">
               <Home />

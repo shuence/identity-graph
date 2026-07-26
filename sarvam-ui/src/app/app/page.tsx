@@ -7,7 +7,8 @@ import { DeskWizard } from "@/components/desk/desk-wizard";
 function DeskHome() {
   const params = useSearchParams();
   const service = params.get("service") || undefined;
-  return <DeskWizard initialServiceId={service} />;
+  const caseId = params.get("case") || undefined;
+  return <DeskWizard initialServiceId={service} initialCaseId={caseId} />;
 }
 
 export default function AppHome() {

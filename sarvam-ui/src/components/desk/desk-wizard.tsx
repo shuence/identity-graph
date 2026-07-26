@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -63,7 +64,18 @@ import {
   type VerifyResult,
   verifyCase,
 } from "@/lib/api/identitygraph";
+import { createCase, getCase, patchCase } from "@/lib/api/auth";
 import { cn } from "@/lib/utils";
+
+function citizenFromAnswers(answers: Record<string, string>) {
+  return (
+    answers.full_name ||
+    answers.applicant_name ||
+    answers.name ||
+    answers.citizen_name ||
+    ""
+  ).trim();
+}
 
 const STEPS = [
   "Service",
@@ -191,7 +203,17 @@ function isLongField(key: string) {
   );
 }
 
-export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) {
+export function DeskWizard({
+  initialServiceId,
+  initialCaseId,
+}: {
+  initialServiceId?: string;
+  initialCaseId?: string;
+}) {
+  const router = useRouter();
+  const [caseId, setCaseId] = useState<string | null>(initialCaseId || null);
+  const persistReady = useRef(false);
+  const creatingCase = useRef(false);
   const [step, setStep] = useState(0);
   const [services, setServices] = useState<Service[]>([]);
   const [serviceId, setServiceId] = useState(
@@ -224,6 +246,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
   }, [modeFilter, services]);
 
   const loadServices = useCallback(async () => {
+    persistReady.current = false;
     try {
       const health = await fetchHealth();
       setBootError(null);
@@ -233,9 +256,29 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       setApiLive(keyLoaded);
       const data = await fetchServices();
       setServices(data);
-      const id = initialServiceId || data[0]?.id || "link_mobile_aadhaar";
-      setServiceId(id);
-      setService(await fetchService(id));
+
+      if (initialCaseId) {
+        const c = await getCase(initialCaseId);
+        setCaseId(c.id);
+        const id =
+          c.service_id ||
+          initialServiceId ||
+          data[0]?.id ||
+          "link_mobile_aadhaar";
+        setServiceId(id);
+        setService(await fetchService(id));
+        setStep(c.step || 0);
+        setAnswers(c.answers || {});
+        setExtractions((c.extractions || []) as Extraction[]);
+        setResult((c.verify_result as VerifyResult) || null);
+        setNotes(c.notes || "");
+        setFormReviewed(Boolean(c.form_reviewed));
+        setReviewed(Boolean(c.ocr_reviewed));
+      } else {
+        const id = initialServiceId || data[0]?.id || "link_mobile_aadhaar";
+        setServiceId(id);
+        setService(await fetchService(id));
+      }
     } catch (e) {
       setApiLive(false);
       setBootError(
@@ -243,12 +286,71 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       );
     } finally {
       setBusy(false);
+      // ponytail: skip first paint so resume doesn't PATCH itself
+      queueMicrotask(() => {
+        persistReady.current = true;
+      });
     }
-  }, [initialServiceId]);
+  }, [initialCaseId, initialServiceId]);
 
   useEffect(() => {
     void loadServices();
   }, [loadServices]);
+
+  // Auto-save desk state to FastAPI case store (Memory L3).
+  useEffect(() => {
+    if (!persistReady.current) return;
+    const payload = {
+      service_id: serviceId,
+      citizen_label: citizenFromAnswers(answers) || null,
+      step,
+      answers,
+      extractions,
+      verify_result: result ?? undefined,
+      notes,
+      form_reviewed: formReviewed,
+      ocr_reviewed: reviewed,
+      status: step >= 4 && result ? "verified" : "draft",
+    };
+    const hasProgress =
+      step > 0 ||
+      Object.keys(answers).length > 0 ||
+      extractions.length > 0 ||
+      Boolean(result) ||
+      notes.trim().length > 0;
+    if (!caseId && !hasProgress) return;
+    if (!caseId && creatingCase.current) return;
+
+    const t = window.setTimeout(() => {
+      if (!caseId) {
+        creatingCase.current = true;
+        void createCase(payload)
+          .then((c) => {
+            setCaseId(c.id);
+            router.replace(`/app?case=${c.id}`);
+          })
+          .catch(() => {
+            creatingCase.current = false;
+          });
+        return;
+      }
+      void patchCase(caseId, payload).catch(() => {
+        /* ignore transient save errors */
+      });
+    }, 700);
+    return () => window.clearTimeout(t);
+  }, [
+    caseId,
+    serviceId,
+    step,
+    answers,
+    extractions,
+    result,
+    notes,
+    formReviewed,
+    reviewed,
+    router,
+  ]);
 
   function resetCaseState() {
     setAnswers({});
