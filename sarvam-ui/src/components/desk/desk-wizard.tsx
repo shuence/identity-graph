@@ -28,6 +28,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/identity/status-badge";
 import {
+  ocrDocAccuracy,
+  overallAccuracy,
+  perDocAccuracy,
+} from "@/lib/desk/doc-accuracy";
+import {
   OperatorRail,
   fillModeLabel,
 } from "@/components/desk/operator-rail";
@@ -1126,20 +1131,52 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             </Card>
           ) : (
             <>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {extractions.map((doc, i) => {
+                  const ocr = ocrDocAccuracy(doc);
+                  return (
+                    <button
+                      key={`ocr-acc-${doc.doc_type}-${i}`}
+                      type="button"
+                      onClick={() => setReviewIdx(i)}
+                      className={cn(
+                        "rounded-xl border p-3 text-left transition-colors",
+                        i === reviewIdx
+                          ? "border-primary bg-secondary"
+                          : "border-border bg-card hover:bg-muted/40"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="truncate text-sm font-semibold">
+                          {doc.doc_type}
+                        </p>
+                        <p
+                          className={cn(
+                            "shrink-0 font-heading text-lg font-semibold tabular-nums",
+                            ocr.ocrPct >= 80
+                              ? "text-status-match"
+                              : ocr.ocrPct >= 50
+                                ? "text-status-variant"
+                                : "text-status-uncertain"
+                          )}
+                        >
+                          {ocr.ocrPct}%
+                        </p>
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        OCR · {ocr.ocrReadable}/{ocr.ocrExpected} fields
+                        {ocr.ocrUnsure.length
+                          ? ` · missing ${ocr.ocrUnsure.join(", ")}`
+                          : ""}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="flex flex-wrap items-center gap-2">
-                {extractions.map((doc, i) => (
-                  <Button
-                    key={`${doc.doc_type}-${i}`}
-                    size="sm"
-                    variant={i === reviewIdx ? "default" : "outline"}
-                    onClick={() => setReviewIdx(i)}
-                  >
-                    {doc.doc_type}
-                    {doc.handwritten ? " · HW" : ""}
-                  </Button>
-                ))}
                 <Badge variant="outline" className="rounded-lg">
-                  {uncertainCount} UNCERTAIN field(s)
+                  {uncertainCount} unsure field(s)
                 </Badge>
               </div>
 
@@ -1280,17 +1317,12 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         <div className="flex flex-col gap-4">
           {(() => {
             const summary = result.cross_document.summary;
-            const total =
-              summary.matches +
-              summary.variants +
-              summary.blockers +
-              summary.uncertain;
-            const accuracy =
-              total > 0
-                ? Math.round(
-                    ((summary.matches + summary.variants) / total) * 100
-                  )
-                : Math.round(result.knowledge.score);
+            const docScores = perDocAccuracy(
+              extractions,
+              result.cross_document.comparisons,
+              result.form_verification.checks
+            );
+            const accuracy = overallAccuracy(docScores);
             const blockers = [
               ...result.cross_document.comparisons.filter(
                 (c) => c.status === "CRITICAL"
@@ -1319,19 +1351,19 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
             return (
               <>
-                {/* Score + counts */}
+                {/* Overall + counts */}
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <div className="desk-panel flex flex-col justify-between gap-2 bg-card p-4 sm:col-span-2 lg:col-span-1">
                     <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Accuracy
+                      Overall
                     </p>
                     <p className="font-heading text-4xl font-semibold tabular-nums text-foreground">
                       {accuracy}
                       <span className="text-lg text-muted-foreground">%</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {Math.round(result.knowledge.score)} ·{" "}
-                      {result.knowledge.grade}
+                      Avg across {docScores.length} docs ·{" "}
+                      {Math.round(result.knowledge.score)} KB
                       {judgeMode ? " · demo" : ""}
                     </p>
                   </div>
@@ -1387,6 +1419,107 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                       </p>
                     </div>
                   ))}
+                </div>
+
+                {/* Per-document accuracy */}
+                <div className="flex flex-col gap-3">
+                  <h3 className="font-heading text-base font-semibold">
+                    Accuracy per document
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {docScores.map((d, i) => (
+                      <div
+                        key={`${d.docType}-${i}`}
+                        className={cn(
+                          "rounded-xl border bg-card p-4",
+                          d.blocker > 0
+                            ? "border-status-blocker/35"
+                            : d.overallPct >= 85
+                              ? "border-status-match/30"
+                              : "border-border"
+                        )}
+                      >
+                        <div className="mb-3 flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">
+                              {d.docType}
+                            </p>
+                            {d.sourceFile ? (
+                              <p className="truncate text-[11px] text-muted-foreground">
+                                {d.sourceFile}
+                              </p>
+                            ) : null}
+                          </div>
+                          <p
+                            className={cn(
+                              "font-heading text-2xl font-semibold tabular-nums",
+                              d.overallPct >= 85
+                                ? "text-status-match"
+                                : d.overallPct >= 60
+                                  ? "text-status-variant"
+                                  : "text-status-blocker"
+                            )}
+                          >
+                            {d.overallPct}
+                            <span className="text-sm">%</span>
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div className="rounded-lg border border-border bg-muted/30 px-2.5 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              OCR fill
+                            </p>
+                            <p className="font-semibold tabular-nums">
+                              {d.ocrPct}%
+                              <span className="ml-1 font-normal text-muted-foreground">
+                                {d.ocrReadable}/{d.ocrExpected}
+                              </span>
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-border bg-muted/30 px-2.5 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              Verify
+                            </p>
+                            <p className="font-semibold tabular-nums">
+                              {d.verifyPct == null ? "—" : `${d.verifyPct}%`}
+                              {d.verifyTotal > 0 ? (
+                                <span className="ml-1 font-normal text-muted-foreground">
+                                  {d.verifyTotal} checks
+                                </span>
+                              ) : null}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                          {d.match > 0 ? (
+                            <span className="rounded-full bg-status-match/10 px-2 py-0.5 text-status-match">
+                              {d.match} match
+                            </span>
+                          ) : null}
+                          {d.variant > 0 ? (
+                            <span className="rounded-full bg-status-variant/10 px-2 py-0.5 text-status-variant">
+                              {d.variant} variant
+                            </span>
+                          ) : null}
+                          {d.blocker > 0 ? (
+                            <span className="rounded-full bg-status-blocker/10 px-2 py-0.5 text-status-blocker">
+                              {d.blocker} risk
+                            </span>
+                          ) : null}
+                          {d.unsure > 0 ? (
+                            <span className="rounded-full bg-status-uncertain/15 px-2 py-0.5 text-status-uncertain">
+                              {d.unsure} unsure
+                            </span>
+                          ) : null}
+                          {d.ocrUnsure.length > 0 ? (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+                              OCR miss: {d.ocrUnsure.join(", ")}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Risks first */}
