@@ -9,10 +9,18 @@ const UPSTREAM =
   process.env.IDENTITYGRAPH_API_URL?.replace(/\/$/, "") ||
   "http://127.0.0.1:8001";
 
+const COOKIE = "ig_session";
+
 async function proxy(req: NextRequest, path: string[]) {
   const url = `${UPSTREAM}/${path.join("/")}${req.nextUrl.search}`;
   const contentType = req.headers.get("content-type") || "";
   const headers = new Headers();
+
+  const token = req.cookies.get(COOKIE)?.value;
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+    headers.set("X-IG-Token", token);
+  }
 
   const init: RequestInit = {
     method: req.method,
@@ -21,7 +29,6 @@ async function proxy(req: NextRequest, path: string[]) {
 
   if (req.method !== "GET" && req.method !== "HEAD") {
     if (contentType.includes("multipart/form-data")) {
-      // Preserve boundary — do not set Content-Type manually.
       init.body = await req.arrayBuffer();
       headers.set("Content-Type", contentType);
     } else {
@@ -62,6 +69,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
+  return proxy(req, (await ctx.params).path || []);
+}
+
+export async function PATCH(req: NextRequest, ctx: Ctx) {
   return proxy(req, (await ctx.params).path || []);
 }
 

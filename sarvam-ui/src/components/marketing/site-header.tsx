@@ -44,8 +44,8 @@ export function SiteHeader() {
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Button render={<Link href="/app" />} nativeButton={false}>
-            Open desk
+          <Button render={<Link href="/login" />} nativeButton={false}>
+            Operator sign in
           </Button>
         </div>
 
@@ -66,11 +66,11 @@ export function SiteHeader() {
                 </a>
               ))}
               <Button
-                render={<Link href="/app" />}
+                render={<Link href="/login" />}
                 nativeButton={false}
                 className="mt-2"
               >
-                Open desk
+                Operator sign in
               </Button>
             </div>
           </SheetContent>

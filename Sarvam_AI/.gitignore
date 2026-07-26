@@ -6,3 +6,5 @@ __pycache__/
 output*.zip
 .venv/
 .venv312/
+data/*.db
+data/*.db-*
