@@ -175,6 +175,17 @@ class SpeakRequest(BaseModel):
     text: str
     language: str = "hi-IN"
     speaker: str = "priya"
+    pace: float = 0.9
+
+
+class AgentTurnRequest(BaseModel):
+    service_id: str
+    transcript: str = ""
+    answers: dict[str, str] = Field(default_factory=dict)
+    active_field: str | None = None
+    pending_confirm: dict[str, str] | None = None
+    history: list[dict[str, str]] = Field(default_factory=list)
+    use_llm: bool = True
 
 
 def _run_verify(body: VerifyRequest) -> dict:
@@ -504,7 +515,13 @@ def voice_speak(body: SpeakRequest):
         raise HTTPException(400, "API_KEY missing in Sarvam_AI/.env")
     from identitygraph.voice import get_client, speak
 
-    audio = speak(get_client(_api_key()), body.text, language=body.language, speaker=body.speaker)
+    audio = speak(
+        get_client(_api_key()),
+        body.text,
+        language=body.language,
+        speaker=body.speaker,
+        pace=body.pace,
+    )
     return Response(content=audio, media_type="audio/wav")
 
 
@@ -520,6 +537,30 @@ async def voice_transcribe(
     data = await file.read()
     suffix = Path(file.filename or "audio.wav").suffix or ".wav"
     result = transcribe(get_client(_api_key()), data, suffix=suffix, mode=mode)
+    return result
+
+
+@app.post("/agent/turn")
+def agent_turn(body: AgentTurnRequest):
+    """Voice/chat desk agent: maps citizen speech → form fields + redirect advice."""
+    try:
+        service = get_service(body.service_id)
+    except KeyError as exc:
+        raise HTTPException(404, f"Unknown service: {body.service_id}") from exc
+
+    from identitygraph.desk_agent import run_agent_turn
+
+    # Prefer live LLM when key is present; heuristic still works offline.
+    use_llm = bool(body.use_llm and _api_key())
+    result = run_agent_turn(
+        service=service,
+        transcript=body.transcript,
+        answers=_filter_form_answers(service, body.answers),
+        active_field=body.active_field,
+        pending_confirm=body.pending_confirm,
+        history=body.history or [],
+        use_llm=use_llm,
+    )
     return result
 
 

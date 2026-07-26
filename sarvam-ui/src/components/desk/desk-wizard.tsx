@@ -33,6 +33,7 @@ import {
   OperatorRail,
   fillModeLabel,
 } from "@/components/desk/operator-rail";
+import { VoiceFormAgent } from "@/components/desk/voice-form-agent";
 import {
   downloadPack,
   extractDocuments,
@@ -70,6 +71,21 @@ const FIELD_KEYS = [
   "dob",
   "address",
   "id_number",
+] as const;
+
+/** Mirrors DOC_TYPES in Sarvam_AI/identitygraph/config.py */
+const ALL_DOC_TYPES = [
+  "Aadhaar Card",
+  "PAN Card",
+  "Voter ID",
+  "Ration Card",
+  "Bank Passbook",
+  "School Certificate",
+  "Driving License",
+  "Passport",
+  "Rejection letter",
+  "Acknowledgement receipt",
+  "Other",
 ] as const;
 
 const FILL_ORDER = [
@@ -152,6 +168,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
   const [formOcrNote, setFormOcrNote] = useState<string | null>(null);
   const [formReviewed, setFormReviewed] = useState(false);
   const [judgeMode, setJudgeMode] = useState(false);
+  const [voiceFullOpen, setVoiceFullOpen] = useState(false);
 
   const servicesByMode = useMemo(() => {
     const groups: { mode: string; items: Service[] }[] = [];
@@ -475,7 +492,10 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
   const formComplete = useMemo(() => {
     if (!service) return false;
-    return service.form_fields.every((f) => (answers[f.key] || "").trim());
+    // Only high-stakes fields are compulsory; optional ones can stay blank.
+    const required = service.form_fields.filter((f) => f.high_stakes);
+    const check = required.length ? required : service.form_fields;
+    return check.every((f) => (answers[f.key] || "").trim());
   }, [service, answers]);
 
   const uncertainCount = useMemo(
@@ -551,6 +571,37 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
   return (
     <>
+      {voiceFullOpen && service ? (
+        <VoiceFormAgent
+          service={service}
+          answers={answers}
+          apiLive={apiLive}
+          onAnswers={(updates) => {
+            setFormReviewed(false);
+            setAnswers((prev) => ({ ...prev, ...updates }));
+          }}
+          onClose={() => setVoiceFullOpen(false)}
+          onRedirect={(where) => {
+            if (where === "review_form") {
+              toast.success(
+                "Voice capture complete — review and edit the form if anything is wrong"
+              );
+              setFormReviewed(false);
+              setVoiceFullOpen(false);
+              setStep(1);
+            } else if (where === "upload_docs") {
+              toast.success("Form ready — continue to document upload when reviewed");
+              setFormReviewed(false);
+              setVoiceFullOpen(false);
+              setStep(1);
+            } else if (where === "verify") {
+              setVoiceFullOpen(false);
+              setStep(3);
+            }
+          }}
+        />
+      ) : null}
+
       <PageHeader
         variant="desk"
         title="IdentityGraph Suvidha Desk"
@@ -899,6 +950,35 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               </CardContent>
             </Card>
 
+            <div className="desk-notice flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[#0b3d91]">
+                  Citizen cannot type? Open full-window voice form
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Sevak asks one field, reads it back, and waits for YES/NO before
+                  saving. When finished, you return here to edit anything wrong.
+                  Same API_KEY in Sarvam_AI/.env for Saaras + Bulbul.
+                </p>
+              </div>
+              <Button
+                className="shrink-0 rounded-sm"
+                onClick={() => setVoiceFullOpen(true)}
+              >
+                <Volume2 data-icon="inline-start" />
+                Open voice form
+              </Button>
+            </div>
+
+            {Object.values(answers).some((v) => (v || "").trim()) ? (
+              <div className="border border-status-match/30 bg-status-match/5 px-4 py-3 text-sm">
+                <p className="font-medium text-foreground">
+                  Captured details are in the form below — edit any field if the
+                  voice capture was wrong, then tick the review checkbox.
+                </p>
+              </div>
+            ) : null}
+
             <OperatorRail
               service={service}
               speakingField={speakingField}
@@ -909,6 +989,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               <Button variant="outline" onClick={() => setStep(0)}>
                 <ArrowLeft data-icon="inline-start" />
                 Back
+              </Button>
+              <Button
+                variant="secondary"
+                className="rounded-sm"
+                onClick={() => setVoiceFullOpen(true)}
+              >
+                <Volume2 data-icon="inline-start" />
+                Voice form (full window)
               </Button>
               <Button
                 disabled={formComplete && !formReviewed}
@@ -1019,11 +1107,13 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                         setUploads(next);
                       }}
                     >
-                      {[
-                        ...service.required_docs,
-                        ...service.optional_docs,
-                        "Other",
-                      ].map((d) => (
+                      {Array.from(
+                        new Set([
+                          ...service.required_docs,
+                          ...service.optional_docs,
+                          ...ALL_DOC_TYPES,
+                        ])
+                      ).map((d) => (
                         <option key={d} value={d}>
                           {d}
                         </option>

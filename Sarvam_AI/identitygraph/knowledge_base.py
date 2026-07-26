@@ -228,12 +228,16 @@ KNOWLEDGE_BASE: dict[str, dict] = {
         ),
         "field_rules": {
             "full_name": {"validators": ["nonempty"], "must_match_doc": "Aadhaar Card"},
-            "dl_number": {"validators": ["dl_number"], "must_match_doc": "Driving License"},
+            "dl_number": {
+                "validators": ["dl_number"],
+                "must_match_doc": "Driving License",
+                "optional": True,
+            },
             "dob": {"validators": ["dob"]},
-            "mobile": {"validators": ["mobile"]},
-            "old_address": {"validators": ["nonempty"]},
+            "mobile": {"validators": ["mobile"], "optional": True},
+            "old_address": {"validators": ["nonempty"], "optional": True},
             "new_address": {"validators": ["address_pincode"]},
-            "change_type": {"validators": ["nonempty"]},
+            "change_type": {"validators": [], "optional": True},
         },
         "required_docs": ["Driving License", "Aadhaar Card"],
         "recommended_docs": ["Bank Passbook", "Ration Card"],
@@ -244,7 +248,7 @@ KNOWLEDGE_BASE: dict[str, dict] = {
             "Photo / signature strip unreadable on scan",
         ],
         "operator_checklist": [
-            "Confirm change_type is Name / Address / both",
+            "Confirm change_type if known (Name / Address / both) — optional on this desk form",
             "For name change, check if state RTO requires affidavit or gazette",
             "Scan both sides of DL",
         ],
@@ -781,12 +785,20 @@ def validate_against_knowledge(
 
     for key, rule in kb["field_rules"].items():
         value = (answers.get(key) or "").strip()
-        complete_total += 1
-        if value:
+        optional = bool(rule.get("optional"))
+        if optional:
+            # Optional fields: skip when empty; validate format only when filled.
+            if not value:
+                continue
+            complete_total += 1
             complete_ok += 1
         else:
-            issues.append(FieldIssue(key, "FAIL", "Required field is empty"))
-            continue
+            complete_total += 1
+            if value:
+                complete_ok += 1
+            else:
+                issues.append(FieldIssue(key, "FAIL", "Required field is empty"))
+                continue
 
         for vname in rule.get("validators", []):
             fn = VALIDATORS[vname]

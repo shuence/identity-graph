@@ -266,11 +266,20 @@ export function extractForm(opts: {
   return multipart<FormExtractResult>("/extract/form", form);
 }
 
-export async function speakPrompt(text: string, language = "hi-IN") {
+export async function speakPrompt(
+  text: string,
+  language = "en-IN",
+  opts?: { pace?: number; speaker?: string }
+) {
   const res = await fetch(`${BASE}/voice/speak`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, language }),
+    body: JSON.stringify({
+      text,
+      language,
+      pace: opts?.pace ?? 0.88,
+      speaker: opts?.speaker ?? "priya",
+    }),
   });
   if (!res.ok) throw new Error(`TTS failed (${res.status})`);
   return res.blob();
@@ -286,6 +295,33 @@ export async function transcribeAudio(file: Blob, mode = "codemix") {
   });
   if (!res.ok) throw new Error(`STT failed (${res.status})`);
   return res.json() as Promise<{ transcript: string; language_code?: string }>;
+}
+
+export type AgentTurnResult = {
+  reply_hi: string;
+  reply_en: string;
+  field_updates: Record<string, string>;
+  active_field: string | null;
+  pending_confirm?: { field_key: string; value: string } | null;
+  ask_next: string | null;
+  redirect: "upload_docs" | "verify" | "review_form" | null;
+  action: string;
+  engine?: string;
+};
+
+export function agentTurn(body: {
+  service_id: string;
+  transcript?: string;
+  answers?: Record<string, string>;
+  active_field?: string | null;
+  pending_confirm?: { field_key: string; value: string } | null;
+  history?: { role: string; text: string }[];
+  use_llm?: boolean;
+}) {
+  return api<AgentTurnResult>("/agent/turn", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function downloadPack(

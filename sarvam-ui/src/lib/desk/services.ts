@@ -45,10 +45,10 @@ export const SERVICES: Service[] = [
     },
     form_fields: [
       {"key": "full_name", "label": "Full Name", "high_stakes": true, "compare_to": "full_name", "prompt_hi": "अपना पूरा नाम बताइए।", "prompt_en": "Please say your full name."},
-      {"key": "dl_number", "label": "Driving Licence Number", "high_stakes": true, "compare_to": "id_number", "compare_doc": "Driving License", "prompt_hi": "अपना ड्राइविंग लाइसेंस नंबर बताइए।", "prompt_en": "Please say your driving licence number."},
+      {"key": "dl_number", "label": "Driving Licence Number", "high_stakes": false, "compare_to": "id_number", "compare_doc": "Driving License", "prompt_hi": "अपना ड्राइविंग लाइसेंस नंबर बताइए।", "prompt_en": "Please say your driving licence number."},
       {"key": "dob", "label": "Date of Birth", "high_stakes": true, "compare_to": "dob", "prompt_hi": "अपनी जन्म तिथि बताइए।", "prompt_en": "Please say your date of birth."},
-      {"key": "mobile", "label": "Mobile Number", "high_stakes": true, "compare_to": null, "prompt_hi": "अपना मोबाइल नंबर बताइए।", "prompt_en": "Please say your mobile number."},
-      {"key": "change_type", "label": "What to Change", "high_stakes": true, "compare_to": null, "prompt_hi": "आप क्या बदलना चाहते हैं — नाम, पता, या दोनों?", "prompt_en": "What do you want to change — name, address, or both?"},
+      {"key": "mobile", "label": "Mobile Number", "high_stakes": false, "compare_to": null, "prompt_hi": "अपना मोबाइल नंबर बताइए।", "prompt_en": "Please say your mobile number."},
+      {"key": "change_type", "label": "What to Change", "high_stakes": false, "compare_to": null, "prompt_hi": "आप क्या बदलना चाहते हैं — नाम, पता, या दोनों?", "prompt_en": "What do you want to change — name, address, or both?"},
       {"key": "old_address", "label": "Address on Current DL", "high_stakes": false, "compare_to": "address", "compare_doc": "Driving License", "prompt_hi": "लाइसेंस पर अभी कौन सा पता लिखा है?", "prompt_en": "What address is currently printed on your licence?"},
       {"key": "new_address", "label": "New Address (with pincode)", "high_stakes": true, "compare_to": "address", "compare_doc": "Aadhaar Card", "prompt_hi": "नया पता बताइए — पिनकोड ज़रूर बताएं।", "prompt_en": "Please say your new address, including pincode."},
     ],
