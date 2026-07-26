@@ -189,29 +189,48 @@
   animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Suvidha desk: flatter, government-portal panels (Passport Seva / CSC style) */
-.desk-gov {
-  --radius: 0.2rem;
+/* Suvidha desk (/app): soft Sarvam Epoch shell — same tokens as marketing */
+.desk-shell {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, #e8effc 0%, transparent 55%),
+    var(--background);
 }
 
-.desk-gov [data-slot="card"] {
-  border-radius: 2px;
+.desk-shell [data-slot="card"] {
+  border-radius: var(--radius-xl);
   background: var(--card);
-  outline: 1px solid var(--border);
-  --tw-ring-shadow: 0 0 #0000;
-  --tw-ring-offset-shadow: 0 0 #0000;
-  box-shadow: none;
+  box-shadow: 0 1px 2px rgb(33 33 204 / 4%);
 }
 
-.desk-gov [data-slot="card-header"],
-.desk-gov [data-slot="card-footer"] {
-  border-radius: 0;
+.desk-shell [data-slot="card-header"] {
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--secondary) 55%, white);
+  padding-block: 1rem;
+}
+
+.desk-shell [data-slot="card-title"] {
+  font-family: var(--font-heading), var(--font-sans), sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--indigo-deep);
+}
+
+.desk-shell [data-slot="card-description"] {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.desk-shell [data-slot="card-content"] {
+  padding-block: 1.1rem;
 }
 
 .desk-panel {
   border: 1px solid var(--border);
   background: var(--card);
-  border-radius: 2px;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 1px 2px rgb(33 33 204 / 4%);
+  overflow: hidden;
 }
 
 .desk-panel-head {
@@ -221,18 +240,18 @@
   justify-content: space-between;
   gap: 0.5rem;
   border-bottom: 1px solid var(--border);
-  background: #f3f6fb;
-  padding: 0.65rem 0.9rem;
+  background: color-mix(in oklab, var(--secondary) 55%, white);
+  padding: 0.85rem 1.1rem;
   font-family: var(--font-heading), var(--font-sans), sans-serif;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
   color: var(--indigo-deep);
 }
 
 .desk-row {
   border-bottom: 1px solid var(--border);
-  padding: 0.75rem 0.9rem;
+  padding: 0.85rem 1.1rem;
 }
 
 .desk-row:last-child {
@@ -241,25 +260,48 @@
 
 .desk-notice {
   border: 1px solid var(--border);
-  border-left: 4px solid var(--primary);
-  background: #f7f9fc;
-  border-radius: 2px;
-  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--primary);
+  background: color-mix(in oklab, var(--secondary) 40%, white);
+  border-radius: var(--radius-lg);
+  padding: 0.95rem 1.1rem;
 }
 
-.desk-tricolor {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  height: 3px;
-  width: 100%;
+.desk-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px dashed color-mix(in oklab, var(--primary) 28%, transparent);
+  background: color-mix(in oklab, var(--secondary) 45%, white);
+  padding: 1.1rem;
+  border-radius: var(--radius-lg);
 }
 
-.desk-tricolor > span:nth-child(1) {
-  background: #ff9933;
+.desk-step-current {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: var(--radius-lg);
 }
-.desk-tricolor > span:nth-child(2) {
-  background: #ffffff;
+
+.desk-step-done {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border-radius: var(--radius-lg);
 }
-.desk-tricolor > span:nth-child(3) {
-  background: #138808;
+
+.desk-chip {
+  border: 1px solid color-mix(in oklab, var(--primary) 22%, transparent);
+  background: color-mix(in oklab, var(--secondary) 50%, white);
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.desk-page-header {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 1px 2px rgb(33 33 204 / 4%);
+  padding: 1.15rem 1.25rem;
 }

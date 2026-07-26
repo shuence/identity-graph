@@ -517,13 +517,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
     return (
       <>
         <PageHeader
+          variant="desk"
           title="Suvidha Desk"
           description="Connect Sarvam_AI for live Vision OCR."
         />
-        <Card className="border-status-blocker/30 bg-status-blocker/5 shadow-none">
-          <CardContent className="flex flex-col gap-4 p-6">
+        <Card className="border-status-blocker/30 bg-status-blocker/5">
+          <CardContent className="flex flex-col gap-4">
             <p className="text-sm text-foreground">{bootError}</p>
-            <pre className="overflow-x-auto rounded-lg border border-border bg-card p-3 font-mono text-xs">
+            <pre className="overflow-x-auto border border-border bg-muted/30 p-3 font-mono text-xs">
               {`cd Sarvam_AI
 ./run_api.sh
 # API_KEY in Sarvam_AI/.env
@@ -551,13 +552,13 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
   return (
     <>
       <PageHeader
+        variant="desk"
         title="IdentityGraph Suvidha Desk"
         description={
           service
             ? `${service.title} · ${fillModeLabel(service.fill_mode) || "operator desk"} — voice, OCR, mismatch verify, portal pack`
             : "Sarvam Epoch · CSC desk for India's still-manual identity forms"
         }
-        className="border-border bg-card px-4 py-4 md:px-5"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -565,7 +566,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               variant="secondary"
               disabled={busy}
               onClick={() => void runJudgeDemo()}
-              className="rounded-sm"
+              className="rounded-lg"
             >
               {busy ? (
                 <Loader2 className="animate-spin" data-icon="inline-start" />
@@ -577,7 +578,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             {judgeMode ? (
               <Badge
                 variant="secondary"
-                className="rounded-sm border-primary/40 bg-primary/10 text-primary"
+                className="rounded-lg border-primary/40 bg-primary/10 text-primary"
               >
                 Judge demo
               </Badge>
@@ -585,7 +586,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             <Badge
               variant="secondary"
               className={cn(
-                "rounded-sm",
+                "rounded-lg",
                 apiLive
                   ? "border-status-match/40 bg-status-match/10 text-status-match"
                   : "border-status-uncertain/40 text-status-uncertain"
@@ -599,14 +600,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
       <nav
         aria-label="Desk steps"
-        className="desk-panel overflow-hidden bg-card"
+        className="desk-panel bg-card p-1.5"
       >
-        <ol className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+        <ol className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6">
           {STEPS.map((label, i) => {
             const done = i < step;
             const current = i === step;
             return (
-              <li key={label} className="min-w-0 border-b border-r border-border last:border-r-0 sm:[&:nth-child(3)]:border-r-0 lg:[&:nth-child(3)]:border-r lg:border-b-0">
+              <li key={label} className="min-w-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -617,19 +618,21 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     if (i === 5 && result) setStep(5);
                   }}
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs transition-colors",
-                    current && "bg-[#0b3d91] text-white",
-                    done && !current && "bg-[#e8eef8] text-[#0b3d91]",
-                    !done && !current && "bg-card text-muted-foreground hover:bg-muted/40"
+                    "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs transition-colors",
+                    current && "desk-step-current",
+                    done && !current && "desk-step-done",
+                    !done &&
+                      !current &&
+                      "bg-transparent text-muted-foreground hover:bg-muted/50"
                   )}
                 >
                   <span
                     className={cn(
-                      "flex size-6 shrink-0 items-center justify-center border text-[11px] font-semibold",
+                      "flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold",
                       current
                         ? "border-white/40 bg-white/15 text-white"
                         : done
-                          ? "border-[#0b3d91]/30 bg-white text-[#0b3d91]"
+                          ? "border-primary/30 bg-background text-primary"
                           : "border-border bg-muted text-muted-foreground"
                     )}
                   >
@@ -647,7 +650,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         <div className="flex flex-col gap-5">
           <div className="desk-notice flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-1">
-              <p className="text-sm font-semibold text-[#0b3d91]">
+              <p className="text-sm font-semibold text-primary">
                 Quick path for judges — Sanika Chavan RTO demo
               </p>
               <p className="text-sm text-muted-foreground">
@@ -658,7 +661,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             <Button
               disabled={busy}
               onClick={() => void runJudgeDemo()}
-              className="shrink-0 rounded-sm"
+              className="shrink-0 rounded-lg"
             >
               {busy ? (
                 <Loader2 className="animate-spin" data-icon="inline-start" />
@@ -674,7 +677,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               BLO/ERO offline, CSC-assisted portals, and identity-mismatch
               remediation.
             </p>
-            <Button disabled={!service} onClick={() => setStep(1)} className="rounded-sm">
+            <Button disabled={!service} onClick={() => setStep(1)} className="rounded-lg">
               Next — Application form
               <ArrowRight data-icon="inline-end" />
             </Button>
@@ -695,14 +698,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                       className={cn(
                         "flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors sm:flex-row sm:items-center sm:justify-between",
                         on
-                          ? "bg-[#e8eef8]"
+                          ? "bg-secondary"
                           : "bg-card hover:bg-muted/40"
                       )}
                     >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           {on ? (
-                            <span className="border border-[#0b3d91] bg-[#0b3d91] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                            <span className="rounded-full border border-primary bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
                               Selected
                             </span>
                           ) : null}
@@ -731,7 +734,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             </div>
           ))}
           <div className="flex justify-end">
-            <Button disabled={!service} onClick={() => setStep(1)} className="rounded-sm">
+            <Button disabled={!service} onClick={() => setStep(1)} className="rounded-lg">
               Next — Application form
               <ArrowRight data-icon="inline-end" />
             </Button>
@@ -741,27 +744,27 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
       {step === 1 && service && (
         <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
-          <Card className="border-border shadow-none rounded-sm">
-            <CardHeader className="gap-1 border-b border-border bg-[#0b3d91] text-white">
-              <CardTitle className="text-center text-base font-semibold uppercase tracking-wide text-white">
+          <Card>
+            <CardHeader className="gap-1 text-center">
+              <CardTitle className="uppercase tracking-wide">
                 {service.title}
               </CardTitle>
-              <p className="text-center text-xs text-white/80">
+              <p className="text-xs text-muted-foreground">
                 {service.official_form || service.portal.name}
                 {service.fill_mode
                   ? ` · ${fillModeLabel(service.fill_mode)}`
                   : ""}
               </p>
               {formOcrNote ? (
-                <p className="text-center text-xs text-amber-200">{formOcrNote}</p>
+                <p className="text-xs text-status-uncertain">{formOcrNote}</p>
               ) : null}
             </CardHeader>
-            <CardContent className="flex flex-col gap-5 pt-6">
+            <CardContent className="flex flex-col gap-5">
               {service.form_fields.map((field) => (
                 <div
                   key={field.key}
                   className={cn(
-                    "flex flex-col gap-2 rounded-lg border border-transparent p-1",
+                    "flex flex-col gap-2 border border-transparent p-1",
                     speakingField === field.key && "border-primary/40 bg-secondary/40"
                   )}
                 >
@@ -845,9 +848,9 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
           </Card>
 
           <div className="flex flex-col gap-4">
-            <Card className="border-border shadow-none">
+            <Card>
               <CardHeader>
-                <CardTitle className="font-heading text-lg flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2">
                   <FileScan className="size-4" />
                   Scan filled form
                 </CardTitle>
@@ -859,37 +862,39 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   FORM-ONLY values like mobile that eKYC cannot provide. Review
                   before continuing.
                 </p>
-                <input
-                  type="file"
-                  accept={SCAN_ACCEPT}
-                  className="block w-full cursor-pointer text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] || null;
-                    setFormFile(f);
-                    setFormReviewed(false);
-                    if (f) {
-                      toast.success(`Selected ${f.name}`);
-                    }
-                  }}
-                />
-                {formFile ? (
-                  <p className="text-xs text-muted-foreground">
-                    {formFile.name} · {(formFile.size / 1024).toFixed(0)} KB ·{" "}
-                    {formFile.type || "unknown type"}
-                  </p>
-                ) : null}
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    disabled={busy || !formFile || !apiLive}
-                    onClick={() => void runFormOcr()}
-                  >
-                    {busy ? (
-                      <Loader2 className="animate-spin" data-icon="inline-start" />
-                    ) : (
-                      <Upload data-icon="inline-start" />
-                    )}
-                    OCR form
-                  </Button>
+                <div className="desk-upload">
+                  <input
+                    type="file"
+                    accept={SCAN_ACCEPT}
+                    className="block w-full cursor-pointer text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      setFormFile(f);
+                      setFormReviewed(false);
+                      if (f) {
+                        toast.success(`Selected ${f.name}`);
+                      }
+                    }}
+                  />
+                  {formFile ? (
+                    <p className="text-xs text-muted-foreground">
+                      {formFile.name} · {(formFile.size / 1024).toFixed(0)} KB ·{" "}
+                      {formFile.type || "unknown type"}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={busy || !formFile || !apiLive}
+                      onClick={() => void runFormOcr()}
+                    >
+                      {busy ? (
+                        <Loader2 className="animate-spin" data-icon="inline-start" />
+                      ) : (
+                        <Upload data-icon="inline-start" />
+                      )}
+                      OCR form
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -923,9 +928,9 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
       {step === 2 && service && (
         <div className="flex flex-col gap-4">
-          <Card className="border-border shadow-none">
+          <Card>
             <CardHeader>
-              <CardTitle className="font-heading text-lg">
+              <CardTitle>
                 Upload documents for OCR
               </CardTitle>
             </CardHeader>
@@ -947,7 +952,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 ) : null}
               </p>
 
-              <div className="flex flex-col gap-3 border border-dashed border-[#0b3d91]/35 bg-[#e8eef8]/60 p-4">
+              <div className="desk-upload">
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div className="flex flex-col gap-1">
                     <Label htmlFor="docs">
@@ -958,7 +963,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                       type="file"
                       accept={SCAN_ACCEPT}
                       multiple
-                      className="block w-full max-w-md cursor-pointer text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
+                      className="block w-full max-w-md cursor-pointer text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
                       onChange={(e) => {
                         const files = Array.from(e.target.files || []);
                         addUploadFiles(files);
@@ -1099,8 +1104,8 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       {step === 3 && (
         <div className="flex flex-col gap-4">
           {!extractions.length ? (
-            <Card className="border-border shadow-none">
-              <CardContent className="p-6 text-sm text-muted-foreground">
+            <Card>
+              <CardContent className="text-sm text-muted-foreground">
                 No OCR results yet. Upload documents and run Sarvam Vision first.
                 <div className="mt-4">
                   <Button onClick={() => setStep(2)}>Go to OCR upload</Button>
@@ -1121,16 +1126,16 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     {doc.handwritten ? " · HW" : ""}
                   </Button>
                 ))}
-                <Badge variant="outline" className="rounded-sm">
+                <Badge variant="outline" className="rounded-lg">
                   {uncertainCount} UNCERTAIN field(s)
                 </Badge>
               </div>
 
               {activeDoc && (
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <Card className="border-border shadow-none">
+                  <Card>
                     <CardHeader>
-                      <CardTitle className="font-heading text-lg">
+                      <CardTitle>
                         Check extracted fields
                       </CardTitle>
                       <p className="text-sm text-muted-foreground">
@@ -1158,7 +1163,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                               {bad ? (
                                 <Badge
                                   variant="outline"
-                                  className="rounded-sm border-status-uncertain/40 text-status-uncertain"
+                                  className="rounded-lg border-status-uncertain/40 text-status-uncertain"
                                 >
                                   Needs check
                                 </Badge>
@@ -1220,14 +1225,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     </CardContent>
                   </Card>
 
-                  <Card className="border-border shadow-none">
+                  <Card>
                     <CardHeader>
-                      <CardTitle className="font-heading text-lg">
+                      <CardTitle>
                         OCR text (source)
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
+                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
                         {activeDoc.ocr_text || "(no OCR text returned)"}
                       </pre>
                       <p className="mt-3 text-xs text-muted-foreground">
@@ -1368,7 +1373,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
           <div className="desk-panel overflow-hidden">
             <div className="desk-panel-head">
               <span>Knowledge score</span>
-              <span className="border border-[#0b3d91]/25 bg-white px-2 py-0.5 text-xs font-semibold text-[#0b3d91]">
+              <span className="desk-chip">
                 {Math.round(result.knowledge.score)} · {result.knowledge.grade}
               </span>
             </div>
@@ -1408,7 +1413,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             <div className="desk-panel-head">
               <span>Form ↔ best-source document</span>
             </div>
-            <p className="border-b border-border bg-[#fafbfd] px-4 py-2 text-xs text-muted-foreground">
+            <p className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
               Each field is checked against the highest-priority readable ID
               (Aadhaar → PAN → DL → …). Docs missing the field are ignored — not
               blockers.
@@ -1458,7 +1463,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 );
               })}
               {Object.keys(result.form_verification.approved_fields).length > 0 ? (
-                <div className="bg-[#fafbfd] px-4 py-3 text-xs text-muted-foreground">
+                <div className="bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
                   FORM-ONLY (no KYC source):{" "}
                   {Object.entries(result.form_verification.approved_fields)
                     .map(([k, v]) => `${k}=${v}`)
@@ -1500,7 +1505,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
           {result.remediation && (
             <div className="desk-notice">
-              <p className="text-sm font-semibold text-[#0b3d91]">
+              <p className="text-sm font-semibold text-primary">
                 Priority remediation
               </p>
               <p className="mt-1 text-sm">
@@ -1515,11 +1520,11 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setStep(3)} className="rounded-sm">
+            <Button variant="outline" onClick={() => setStep(3)} className="rounded-lg">
               <ArrowLeft data-icon="inline-start" />
               Back to review
             </Button>
-            <Button onClick={() => setStep(5)} className="rounded-sm">
+            <Button onClick={() => setStep(5)} className="rounded-lg">
               Portal pack
               <ArrowRight data-icon="inline-end" />
             </Button>
@@ -1533,7 +1538,9 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             <div
               className={cn(
                 "desk-panel-head",
-                impact.ready ? "bg-[#e8f5e9] text-[#14532d]" : "bg-[#fff8e6] text-[#854d0e]"
+                impact.ready
+                  ? "bg-status-match/15 text-status-match"
+                  : "bg-status-uncertain/15 text-status-uncertain"
               )}
             >
               <span className="inline-flex items-center gap-2">
@@ -1619,7 +1626,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     setBusy(false);
                   }
                 }}
-                className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-[#e8eef8] disabled:opacity-50"
+                className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-secondary disabled:opacity-50"
               >
                 <div>
                   <p className="text-sm font-semibold">Filled form PDF</p>
@@ -1628,7 +1635,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     upload or print.
                   </p>
                 </div>
-                <Download className="mt-0.5 size-4 shrink-0 text-[#0b3d91]" />
+                <Download className="mt-0.5 size-4 shrink-0 text-primary" />
               </button>
               <button
                 type="button"
@@ -1649,7 +1656,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     setBusy(false);
                   }
                 }}
-                className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-[#e8eef8] disabled:opacity-50"
+                className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-secondary disabled:opacity-50"
               >
                 <div>
                   <p className="text-sm font-semibold">Identity audit PDF</p>
@@ -1658,7 +1665,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     provenance for the desk file.
                   </p>
                 </div>
-                <Download className="mt-0.5 size-4 shrink-0 text-[#0b3d91]" />
+                <Download className="mt-0.5 size-4 shrink-0 text-primary" />
               </button>
             </div>
           </div>
@@ -1671,7 +1678,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
-                className="rounded-sm"
+                className="rounded-lg"
               />
               <p className="mt-2 text-[11px] text-muted-foreground">
                 Included in the audit PDF
@@ -1684,7 +1691,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             {result.service.portal.url ? (
               <Button
                 variant="secondary"
-                className="rounded-sm"
+                className="rounded-lg"
                 render={
                   <a
                     href={result.service.portal.url}
@@ -1701,14 +1708,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             <Button
               variant="outline"
               onClick={() => setStep(4)}
-              className="rounded-sm"
+              className="rounded-lg"
             >
               <ArrowLeft data-icon="inline-start" />
               Back to verify
             </Button>
             <Button
               variant="ghost"
-              className="rounded-sm"
+              className="rounded-lg"
               render={<Link href="/app" />}
               nativeButton={false}
             >

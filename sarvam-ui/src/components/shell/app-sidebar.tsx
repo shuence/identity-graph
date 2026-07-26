@@ -35,7 +35,7 @@ export function AppSidebar() {
               render={<Link href="/app" />}
               tooltip="IdentityGraph India"
             >
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <div className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground">
                 <GitCompare className="size-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
@@ -43,7 +43,7 @@ export function AppSidebar() {
                   IdentityGraph
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
-                  Fix mismatches before submit
+                  Suvidha Desk
                 </span>
               </div>
             </SidebarMenuButton>
@@ -59,7 +59,10 @@ export function AppSidebar() {
               {nav.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
-                    isActive={pathname === item.href || pathname.startsWith(`${item.href}/`)}
+                    isActive={
+                      pathname === item.href ||
+                      pathname.startsWith(`${item.href}/`)
+                    }
                     tooltip={item.title}
                     render={<Link href={item.href} />}
                   >

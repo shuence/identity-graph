@@ -42,7 +42,7 @@ export function OperatorRail({
           ) : null}
           <p>{service.why}</p>
           {op?.process_summary ? (
-            <p className="border border-border bg-[#fafbfd] p-3 text-xs leading-relaxed text-foreground">
+            <p className="border border-border bg-muted/40 p-3 text-xs leading-relaxed text-foreground">
               {op.process_summary}
             </p>
           ) : null}
@@ -51,7 +51,7 @@ export function OperatorRail({
               href={service.source_url}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-[#0b3d91] underline-offset-2 hover:underline"
+              className="text-xs text-primary underline-offset-2 hover:underline"
             >
               Official source
             </a>
@@ -65,7 +65,7 @@ export function OperatorRail({
           <ul className="flex flex-col divide-y divide-border bg-card text-sm text-muted-foreground">
             {op.operator_checklist.map((item) => (
               <li key={item} className="flex gap-2 px-4 py-2.5">
-                <span className="mt-1.5 size-1.5 shrink-0 bg-[#0b3d91]" />
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
                 <span>{item}</span>
               </li>
             ))}
@@ -89,7 +89,7 @@ export function OperatorRail({
       {onSpeak && service.form_fields[0] ? (
         <Button
           variant="outline"
-          className="rounded-sm"
+          className="rounded-lg"
           disabled={busy}
           onClick={() => onSpeak(service.form_fields[0].key)}
         >

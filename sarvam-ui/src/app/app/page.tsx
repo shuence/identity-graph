@@ -12,7 +12,13 @@ function DeskHome() {
 
 export default function AppHome() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted-foreground">Loading desk…</p>}>
+    <Suspense
+      fallback={
+        <div className="desk-panel p-4 text-sm text-muted-foreground">
+          Loading desk…
+        </div>
+      }
+    >
       <DeskHome />
     </Suspense>
   );
