@@ -46,6 +46,7 @@ export type Extraction = {
   handwritten?: boolean;
   ocr_text?: string;
   fields: Record<string, string>;
+  demo_fallback?: boolean;
 };
 
 export type FormCheck = {
@@ -108,6 +109,42 @@ export type VerifyResult = {
   ready_for_portal: boolean;
 };
 
+export type Meta = {
+  doc_types: string[];
+  field_labels: Record<string, string>;
+  languages: Record<string, string>;
+  sarvam_configured?: boolean;
+  sarvam_key_loaded?: boolean;
+};
+
+export type FormExtractResult = {
+  service_id: string;
+  source_file: string;
+  language: string;
+  ocr_text?: string;
+  form_answers: Record<string, string>;
+  demo_fallback: boolean;
+  needs_review?: boolean;
+  error?: string;
+};
+
+export type DocumentExtractResult = {
+  service_id: string;
+  extractions: Extraction[];
+  failures: { file: string; doc_type: string; error: string }[];
+  demo_fallback: boolean;
+  message?: string;
+};
+
+export type UploadSlot = {
+  id: string;
+  file: File;
+  docType: string;
+  language: string;
+  status: "idle" | "uploading" | "done" | "error";
+  error?: string;
+};
+
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/backend";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -126,12 +163,39 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function multipart<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    body: form,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 export function fetchServices() {
   return api<Service[]>("/services");
 }
 
 export function fetchService(id: string) {
   return api<Service>(`/services/${id}`);
+}
+
+export function fetchMeta() {
+  return api<Meta>("/meta");
+}
+
+export function fetchDemo(serviceId: string, citizen?: string) {
+  const q = citizen ? `?citizen=${encodeURIComponent(citizen)}` : "";
+  return api<{
+    service_id: string;
+    form_answers: Record<string, string>;
+    extractions: Extraction[];
+    citizen?: string;
+  }>(`/demo/${serviceId}${q}`);
 }
 
 export function verifyCase(body: {
@@ -151,10 +215,12 @@ export async function fetchHealth() {
     ok: boolean;
     mode?: string;
     sarvam_key_loaded?: boolean;
+    sarvam_configured?: boolean;
     engine?: string;
   }>("/health");
 }
 
+/** Live Sarvam Vision + 30B OCR via POST /extract (handwritten-aware). */
 export async function extractDocuments(input: {
   files: File[];
   docTypes: string[];
@@ -179,6 +245,38 @@ export async function extractDocuments(input: {
     failures: { file?: string; doc_type?: string; error: string }[];
     engine?: string;
   }>;
+}
+
+/** Scanned application form OCR via POST /extract/form (demo=true for fixtures only). */
+export function extractForm(opts: {
+  serviceId: string;
+  file: File;
+  language?: string;
+  demo?: boolean;
+}) {
+  const form = new FormData();
+  form.append("service_id", opts.serviceId);
+  form.append("file", opts.file);
+  form.append("language", opts.language || "en-IN");
+  form.append("demo", opts.demo ? "true" : "false");
+  return multipart<FormExtractResult>("/extract/form", form);
+}
+
+/** Service-scoped KYC OCR via POST /extract/documents (demo=true for fixtures only). */
+export function extractServiceDocuments(opts: {
+  serviceId: string;
+  files: File[];
+  docTypes: string[];
+  languages?: string[];
+  demo?: boolean;
+}) {
+  const form = new FormData();
+  form.append("service_id", opts.serviceId);
+  opts.files.forEach((f) => form.append("files", f));
+  form.append("doc_types", JSON.stringify(opts.docTypes));
+  form.append("languages", JSON.stringify(opts.languages || []));
+  form.append("demo", opts.demo ? "true" : "false");
+  return multipart<DocumentExtractResult>("/extract/documents", form);
 }
 
 export async function speakPrompt(text: string, language = "hi-IN") {
@@ -225,6 +323,23 @@ export async function downloadPack(
   a.download = kind === "form" ? "filled-form.pdf" : "identity-audit.pdf";
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export function guessDocType(filename: string, preferred: string[]): string {
+  const name = filename.toLowerCase().replace(/\s+/g, "");
+  const rules: [string[], string][] = [
+    [["pan"], "PAN Card"],
+    [["aadhaar", "adhar", "aadhar"], "Aadhaar Card"],
+    [["passbook", "bank", "statement"], "Bank Passbook"],
+    [["voter", "epic"], "Voter ID"],
+    [["ration"], "Ration Card"],
+    [["dl", "licence", "license", "driving"], "Driving License"],
+    [["passport"], "Passport"],
+  ];
+  for (const [keys, doc] of rules) {
+    if (keys.some((k) => name.includes(k))) return doc;
+  }
+  return preferred[0] || "Other";
 }
 
 export function mapStatus(

@@ -231,6 +231,13 @@ def regex_fallback_fields(ocr_text: str, doc_type: str, fields: dict) -> dict:
             if m:
                 ocr_id = m.group(1)
                 break
+    elif doc_type == "Driving License":
+        m = re.search(
+            r"\b([A-Z]{2}[\s\-]?\d{2}[\s\-]?\d{4}[\s\-]?\d{7})\b",
+            upper,
+        )
+        if m:
+            ocr_id = re.sub(r"[\s\-]+", " ", m.group(1)).strip()
 
     if ocr_id:
         current = re.sub(r"\s", "", str(out.get("id_number") or ""))
@@ -342,4 +349,129 @@ def process_document(
         "handwritten": handwritten,
         "ocr_text": ocr_text,
         "fields": fields,
+    }
+
+
+FORM_EXTRACTION_SYSTEM = """Extract Indian government application-form field values from OCR text.
+Return ONLY a JSON object. No markdown fences. No explanation.
+Use the exact keys provided. Missing or unreadable values must be "".
+Prefer noisy readable values over empty strings when text is present.
+Normalize dates to DD/MM/YYYY when possible.
+"""
+
+
+def extract_form_answers(
+    client: SarvamAI,
+    ocr_text: str,
+    form_fields: list[dict],
+) -> dict[str, str]:
+    """Extract service form answers from scanned-form OCR. Never raises."""
+    keys = [f["key"] for f in form_fields if f.get("key")]
+    if not keys:
+        return {}
+
+    schema = {k: "" for k in keys}
+    labels = {f["key"]: f.get("label", f["key"]) for f in form_fields if f.get("key")}
+    user_msg = (
+        "Fill this JSON schema from the OCR of a filled paper form.\n"
+        f"Field labels: {json.dumps(labels, ensure_ascii=False)}\n"
+        f"Schema: {json.dumps(schema)}\n\n"
+        f"OCR:\n{ocr_text[:12000]}"
+    )
+
+    raw = ""
+    try:
+        response = client.chat.completions(
+            model="sarvam-30b",
+            messages=[
+                {"role": "system", "content": FORM_EXTRACTION_SYSTEM},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.0,
+            max_tokens=1200,
+            reasoning_effort=None,
+        )
+        msg = response.choices[0].message
+        raw = (msg.content or "").strip()
+        if not raw:
+            raw = (getattr(msg, "reasoning_content", None) or "").strip()
+    except Exception:
+        return _regex_form_answers(ocr_text, form_fields)
+
+    data: dict = {}
+    if raw:
+        try:
+            data = _parse_json_reply(raw)
+        except Exception:
+            scraped = _loose_json_scrape(raw)
+            data = scraped or {}
+
+    out = _regex_form_answers(ocr_text, form_fields)
+    for key in keys:
+        val = data.get(key)
+        if isinstance(val, str) and val.strip() and val.strip().upper() not in (
+            "UNCERTAIN", "N/A", "NA",
+        ):
+            out[key] = val.strip()
+        elif key not in out:
+            out[key] = ""
+    return {k: out.get(k, "") for k in keys}
+
+
+def _regex_form_answers(ocr_text: str, form_fields: list[dict]) -> dict[str, str]:
+    """Best-effort label-based scrape when LLM is unavailable or empty."""
+    text = ocr_text or ""
+    out: dict[str, str] = {}
+    for spec in form_fields:
+        key = spec.get("key")
+        if not key:
+            continue
+        label = str(spec.get("label") or key)
+        # Match "Label: value" or "Label\nvalue"
+        pat = re.compile(
+            rf"{re.escape(label)}\s*[:\-–]?\s*(.+?)(?:\n|$)",
+            re.IGNORECASE,
+        )
+        m = pat.search(text)
+        if m:
+            val = re.sub(r"\s+", " ", m.group(1)).strip(" .-_|")
+            if val and "FORM-ONLY" not in val.upper():
+                out[key] = val[:200]
+                continue
+
+        # Common aliases for form-only / RTO fields
+        aliases = {
+            "mobile": r"(?:Mobile(?:\s*Number)?|Phone)\s*[:\-–]?\s*([6-9]\d{9})",
+            "dl_number": r"(?:Driving\s*Licence(?:\s*Number)?|DL\s*(?:No|Number)?)\s*[:\-–]?\s*([A-Z]{2}\s?\d{2}\s?\d{4}\s?\d{7})",
+            "full_name": r"(?:Full\s*Name|Applicant(?:\s*Full)?\s*Name)\s*[:\-–]?\s*([A-Za-z][A-Za-z.\s]{2,60})",
+            "father_name": r"(?:Father'?s?(?:\s*/\s*Guardian'?s?)?\s*Name)\s*[:\-–]?\s*([A-Za-z][A-Za-z.\s]{2,60})",
+            "dob": r"(?:Date\s*of\s*Birth|DOB)\s*[:\-–]?\s*(\d{2}[/-]\d{2}[/-]\d{4})",
+            "change_type": r"(?:What\s*to\s*Change|Change\s*Type)\s*[:\-–]?\s*([A-Za-z /]{3,40})",
+            "old_address": r"(?:Address\s*currently\s*on\s*DL|Old\s*Address|Address\s*on\s*Current\s*DL)\s*[:\-–]?\s*(.+?)(?:\n|$)",
+            "new_address": r"(?:New\s*Address|Current\s*Address(?:\s*\(as\s*on\s*Aadhaar\))?)\s*[:\-–]?\s*(.+?)(?:\n|$)",
+            "aadhaar_number": r"(?:Aadhaar(?:\s*Number)?)\s*[:\-–]?\s*([X\d]{4}\s*[X\d]{4}\s*\d{4}|\d{4}\s*\d{4}\s*\d{4})",
+            "reason": r"(?:Reason(?:\s*for\s*Update)?)\s*[:\-–]?\s*(.+?)(?:\n|$)",
+        }
+        if key in aliases:
+            m2 = re.search(aliases[key], text, re.IGNORECASE)
+            if m2:
+                out[key] = re.sub(r"\s+", " ", m2.group(1)).strip()[:200]
+    return out
+
+
+def process_scanned_form(
+    client: SarvamAI,
+    file_path: str,
+    form_fields: list[dict],
+    language: str = "en-IN",
+) -> dict:
+    """Digitize a scanned application form → service form_answers."""
+    ocr_text = digitize_document(client, file_path, language=language)
+    answers = extract_form_answers(client, ocr_text, form_fields)
+    return {
+        "source_file": os.path.basename(file_path),
+        "language": language,
+        "ocr_text": ocr_text,
+        "form_answers": answers,
+        "demo_fallback": False,
     }

@@ -57,7 +57,7 @@ def _demo_form_path(service: dict) -> Path:
 
 def _demo_docs_path(service_id: str) -> Path:
     special = {
-        "rto_dl_update": "sample_extractions_rto.json",
+        "rto_dl_update": "sample_extractions_sanika.json",
         "scheme_apply": "sample_extractions_scheme.json",
         "grievance_complaint": "sample_extractions.json",
     }

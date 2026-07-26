@@ -6,8 +6,11 @@ import {
   ArrowLeft,
   ArrowRight,
   Download,
+  FileScan,
   Loader2,
   ScanSearch,
+  Sparkles,
+  Upload,
   Volume2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -27,9 +30,13 @@ import {
 import {
   downloadPack,
   extractDocuments,
+  extractForm,
+  extractServiceDocuments,
+  fetchDemo,
   fetchHealth,
   fetchService,
   fetchServices,
+  guessDocType,
   mapStatus,
   speakPrompt,
   type Extraction,
@@ -106,6 +113,13 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
   const [reviewed, setReviewed] = useState(false);
   const [speakingField, setSpeakingField] = useState<string | null>(null);
 
+  // Scanned form OCR + review gate
+  const [formFile, setFormFile] = useState<File | null>(null);
+  const [formOcrNote, setFormOcrNote] = useState<string | null>(null);
+  const [formReviewed, setFormReviewed] = useState(false);
+  const [formDemoFallback, setFormDemoFallback] = useState(false);
+  const [docsDemoFallback, setDocsDemoFallback] = useState(false);
+
   const servicesByMode = useMemo(() => {
     const groups: { mode: string; items: Service[] }[] = [];
     for (const mode of FILL_ORDER) {
@@ -121,14 +135,12 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
   const loadServices = useCallback(async () => {
     try {
-      const health = await fetchHealth();
       setBootError(null);
-      if (!health.sarvam_key_loaded) {
-        throw new Error(
-          "Sarvam API key not loaded. Add API_KEY to Sarvam_AI/.env and restart ./run_api.sh"
-        );
-      }
-      setApiLive(true);
+      const health = await fetchHealth();
+      const keyLoaded = Boolean(
+        health.sarvam_key_loaded ?? health.sarvam_configured
+      );
+      setApiLive(keyLoaded);
       const data = await fetchServices();
       setServices(data);
       const id = initialServiceId || data[0]?.id || "link_mobile_aadhaar";
@@ -148,13 +160,22 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
     void loadServices();
   }, [loadServices]);
 
-  async function selectService(id: string) {
-    setServiceId(id);
+  function resetCaseState() {
     setAnswers({});
     setExtractions([]);
     setResult(null);
     setUploads([]);
     setReviewed(false);
+    setFormFile(null);
+    setFormOcrNote(null);
+    setFormReviewed(false);
+    setFormDemoFallback(false);
+    setDocsDemoFallback(false);
+  }
+
+  async function selectService(id: string) {
+    setServiceId(id);
+    resetCaseState();
     setBusy(true);
     try {
       setService(await fetchService(id));
@@ -165,9 +186,73 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
     }
   }
 
+  async function prefillDemo() {
+    setBusy(true);
+    try {
+      const citizenHint =
+        serviceId === "rto_dl_update" ? "sanika" : undefined;
+      const demo = await fetchDemo(serviceId, citizenHint);
+      setAnswers(demo.form_answers);
+      setFormReviewed(true);
+      setFormDemoFallback(true);
+      setFormOcrNote(
+        demo.citizen
+          ? `Demo citizen: ${demo.citizen}`
+          : "Demo form answers loaded"
+      );
+      toast.success(
+        demo.citizen ? `Loaded ${demo.citizen}` : "Demo citizen loaded"
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Demo load failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runFormOcr(forceDemo = false) {
+    if (!formFile) {
+      toast.error("Choose a scanned form image first");
+      return;
+    }
+    if (!forceDemo && !apiLive) {
+      toast.error(
+        "Live form OCR needs API_KEY in Sarvam_AI/.env. Use Demo OCR or Prefill demo citizen."
+      );
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await extractForm({
+        serviceId,
+        file: formFile,
+        demo: forceDemo,
+      });
+      setAnswers((prev) => ({ ...prev, ...res.form_answers }));
+      setFormReviewed(false);
+      setFormDemoFallback(res.demo_fallback);
+      setFormOcrNote(
+        res.demo_fallback
+          ? "Demo form answers — review before continuing (not live OCR)"
+          : "Live form OCR complete — review answers before continuing"
+      );
+      toast.success(
+        res.demo_fallback
+          ? "Demo form answers loaded — review them"
+          : "Form OCR extracted — please review"
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Form OCR failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runOcr() {
     if (!apiLive) {
-      toast.error("Sarvam API key required for OCR");
+      toast.error(
+        "Live OCR needs API_KEY in Sarvam_AI/.env. Use Demo OCR or Load demo documents."
+      );
       return;
     }
     if (uploads.length === 0) {
@@ -182,6 +267,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         handwritten: uploads.map((u) => u.handwritten),
       });
       setExtractions(out.extractions);
+      setDocsDemoFallback(false);
       setReviewIdx(0);
       setReviewed(false);
       setResult(null);
@@ -196,6 +282,67 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "OCR failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runDemoDocOcr() {
+    if (uploads.length === 0) {
+      toast.error("Upload at least one document scan (for type matching)");
+      return;
+    }
+    setBusy(true);
+    try {
+      const out = await extractServiceDocuments({
+        serviceId,
+        files: uploads.map((u) => u.file),
+        docTypes: uploads.map((u) => u.docType),
+        demo: true,
+      });
+      setExtractions(out.extractions);
+      setDocsDemoFallback(true);
+      setReviewIdx(0);
+      setReviewed(false);
+      setResult(null);
+      toast.message("Demo fixtures loaded — not OCR of your files", {
+        description:
+          "Review fields, then Run verification. For live extraction set API_KEY.",
+      });
+      if (out.extractions.length) setStep(3);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Demo OCR failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadDemoDocs() {
+    setBusy(true);
+    try {
+      const name = (answers.full_name || "").toLowerCase();
+      const citizenHint =
+        name.includes("sanika") || serviceId === "rto_dl_update"
+          ? "sanika"
+          : undefined;
+      const demo = await fetchDemo(serviceId, citizenHint);
+      setExtractions(demo.extractions);
+      setDocsDemoFallback(true);
+      setReviewIdx(0);
+      setReviewed(false);
+      setResult(null);
+      if (!Object.keys(answers).length) {
+        setAnswers(demo.form_answers);
+        setFormReviewed(true);
+        setFormDemoFallback(true);
+      }
+      toast.success(
+        `${demo.extractions.length} demo documents loaded` +
+          (demo.citizen ? ` (${demo.citizen})` : "")
+      );
+      if (demo.extractions.length) setStep(3);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Doc load failed");
     } finally {
       setBusy(false);
     }
@@ -228,6 +375,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       if (val && !isUncertain(val)) next[spec.key] = val;
     }
     setAnswers(next);
+    setFormReviewed(false);
     toast.success("Form filled from reviewed OCR — check high-stakes fields");
     setStep(1);
   }
@@ -263,8 +411,16 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
   }
 
   async function runVerify() {
+    if (!formReviewed && Object.keys(answers).length) {
+      toast.error("Confirm you reviewed the form answers first");
+      return;
+    }
     if (!reviewed) {
       toast.error("Mark OCR fields as reviewed before verification");
+      return;
+    }
+    if (!extractions.length) {
+      toast.error("Run OCR (or load demo documents) before verification");
       return;
     }
     setBusy(true);
@@ -308,7 +464,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       <>
         <PageHeader
           title="Suvidha Desk"
-          description="Live Sarvam Vision + 30B OCR required — no dummy data."
+          description="Connect Sarvam_AI for live Vision OCR — demo fixtures work without a key."
         />
         <Card className="border-status-blocker/30 bg-status-blocker/5 shadow-none">
           <CardContent className="flex flex-col gap-4 p-6">
@@ -316,7 +472,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             <pre className="overflow-x-auto rounded-lg border border-border bg-card p-3 font-mono text-xs">
               {`cd Sarvam_AI
 ./run_api.sh
-# API_KEY in Sarvam_AI/.env
+# API_KEY in Sarvam_AI/.env (required for live OCR only)
 # sarvam-ui .env.local → IDENTITYGRAPH_API_URL=http://127.0.0.1:8001`}
             </pre>
             <Button
@@ -350,9 +506,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         actions={
           <Badge
             variant="secondary"
-            className="rounded-full border-status-match/40 bg-status-match/10 text-status-match"
+            className={cn(
+              "rounded-full",
+              apiLive
+                ? "border-status-match/40 bg-status-match/10 text-status-match"
+                : "border-status-uncertain/40 text-status-uncertain"
+            )}
           >
-            Sarvam API live
+            {apiLive ? "Sarvam OCR live" : "Demo OCR available"}
           </Badge>
         }
       />
@@ -454,6 +615,9 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   ? ` · ${fillModeLabel(service.fill_mode)}`
                   : ""}
               </p>
+              {formOcrNote ? (
+                <p className="text-center text-xs text-primary">{formOcrNote}</p>
+              ) : null}
             </CardHeader>
             <CardContent className="flex flex-col gap-5 pt-6">
               {service.form_fields.map((field) => (
@@ -495,9 +659,10 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     <Textarea
                       id={field.key}
                       value={answers[field.key] || ""}
-                      onChange={(e) =>
-                        setAnswers((a) => ({ ...a, [field.key]: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        setFormReviewed(false);
+                        setAnswers((a) => ({ ...a, [field.key]: e.target.value }));
+                      }}
                       rows={3}
                       placeholder={field.prompt_en || ""}
                     />
@@ -505,9 +670,10 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     <Input
                       id={field.key}
                       value={answers[field.key] || ""}
-                      onChange={(e) =>
-                        setAnswers((a) => ({ ...a, [field.key]: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        setFormReviewed(false);
+                        setAnswers((a) => ({ ...a, [field.key]: e.target.value }));
+                      }}
                       placeholder={field.prompt_en || ""}
                     />
                   )}
@@ -523,10 +689,94 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   ) : null}
                 </div>
               ))}
+
+              {formComplete ? (
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/20 p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={formReviewed}
+                    onChange={(e) => setFormReviewed(e.target.checked)}
+                  />
+                  <span>
+                    I reviewed the OCR / form answers above
+                    {formDemoFallback ? " (demo fallback values)" : ""}. Proceed to
+                    document upload.
+                  </span>
+                </label>
+              ) : null}
             </CardContent>
           </Card>
 
           <div className="flex flex-col gap-4">
+            <Card className="border-border shadow-none">
+              <CardHeader>
+                <CardTitle className="font-heading text-lg flex items-center gap-2">
+                  <FileScan className="size-4" />
+                  Scan filled form
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Upload the citizen&apos;s handwritten / block-letter form (PNG/JPG).
+                  OCR fills fields — including FORM-ONLY values like mobile that eKYC
+                  cannot provide. Review before continuing.
+                </p>
+                <Input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => {
+                    setFormFile(e.target.files?.[0] || null);
+                    setFormReviewed(false);
+                  }}
+                />
+                {formFile ? (
+                  <p className="text-xs text-muted-foreground">{formFile.name}</p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    disabled={busy || !formFile}
+                    onClick={() => void runFormOcr(false)}
+                  >
+                    {busy ? (
+                      <Loader2 className="animate-spin" data-icon="inline-start" />
+                    ) : (
+                      <Upload data-icon="inline-start" />
+                    )}
+                    OCR form
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={busy || !formFile}
+                    onClick={() => void runFormOcr(true)}
+                  >
+                    Demo OCR
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-secondary/30 shadow-none">
+              <CardHeader>
+                <CardTitle className="font-heading text-lg">Demo assist</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {serviceId === "rto_dl_update"
+                    ? "Prefills Sanika Chavan RTO answers (no API burn)."
+                    : "Prefills the demo citizen for judging — no API burn."}
+                </p>
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => void prefillDemo()}
+                >
+                  <Sparkles data-icon="inline-start" />
+                  Prefill demo citizen
+                </Button>
+              </CardContent>
+            </Card>
+
             <OperatorRail
               service={service}
               speakingField={speakingField}
@@ -538,8 +788,15 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 <ArrowLeft data-icon="inline-start" />
                 Back
               </Button>
-              <Button onClick={() => setStep(2)}>
-                {formComplete ? "Next — OCR upload" : "Skip to OCR (fill later)"}
+              <Button
+                disabled={formComplete && !formReviewed}
+                onClick={() => setStep(2)}
+              >
+                {formComplete
+                  ? formReviewed
+                    ? "Next — OCR upload"
+                    : "Review form first"
+                  : "Skip to OCR (fill later)"}
                 <ArrowRight data-icon="inline-end" />
               </Button>
             </div>
@@ -560,7 +817,24 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 Required: {service.required_docs.join(", ")}. Mark{" "}
                 <strong>Handwritten</strong> for filled forms / block letters — uses
                 Indic OCR retries and stricter UNCERTAIN handling.
+                {!apiLive ? (
+                  <>
+                    {" "}
+                    <span className="text-status-uncertain">
+                      No API_KEY yet — live OCR is disabled. Use Demo OCR / Load demo
+                      documents for Sanika fixtures, or add{" "}
+                      <code className="rounded bg-muted px-1">API_KEY</code> in{" "}
+                      <code className="rounded bg-muted px-1">Sarvam_AI/.env</code>.
+                    </span>
+                  </>
+                ) : null}
               </p>
+
+              {docsDemoFallback && extractions.length > 0 ? (
+                <Badge variant="outline" className="w-fit rounded-full">
+                  Demo fallback
+                </Badge>
+              ) : null}
 
               <div className="flex flex-col gap-3 rounded-xl border border-dashed border-primary/30 bg-secondary/20 p-4">
                 <Label htmlFor="docs">Scans (JPG / PNG / PDF)</Label>
@@ -571,19 +845,24 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   multiple
                   onChange={(e) => {
                     const files = Array.from(e.target.files || []);
-                    const required = service.required_docs;
+                    const preferred = [
+                      ...service.required_docs,
+                      ...service.optional_docs,
+                    ];
                     setUploads(
                       files.map((file, i) => ({
                         file,
                         docType:
-                          required[i] ||
-                          required[required.length - 1] ||
+                          guessDocType(file.name, preferred) ||
+                          preferred[i] ||
+                          preferred[preferred.length - 1] ||
                           "Other",
                         handwritten: false,
                       }))
                     );
                     setExtractions([]);
                     setReviewed(false);
+                    setDocsDemoFallback(false);
                   }}
                 />
 
@@ -629,33 +908,58 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   </div>
                 ))}
 
-                <Button
-                  disabled={busy || uploads.length === 0}
-                  onClick={() => void runOcr()}
-                >
-                  {busy ? (
-                    <Loader2 className="animate-spin" data-icon="inline-start" />
-                  ) : (
-                    <ScanSearch data-icon="inline-start" />
-                  )}
-                  Run Sarvam Vision + 30B OCR
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    disabled={busy || uploads.length === 0 || !apiLive}
+                    onClick={() => void runOcr()}
+                  >
+                    {busy ? (
+                      <Loader2 className="animate-spin" data-icon="inline-start" />
+                    ) : (
+                      <ScanSearch data-icon="inline-start" />
+                    )}
+                    Run Sarvam Vision + 30B OCR
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={busy || uploads.length === 0}
+                    onClick={() => void runDemoDocOcr()}
+                  >
+                    Demo OCR
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => void loadDemoDocs()}
+                  >
+                    <Sparkles data-icon="inline-start" />
+                    Load demo documents
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setStep(1)}>
-              <ArrowLeft data-icon="inline-start" />
-              Back
-            </Button>
-            <Button
-              disabled={!extractions.length}
-              onClick={() => setStep(3)}
-              variant="secondary"
-            >
-              Review existing OCR
-              <ArrowRight data-icon="inline-end" />
-            </Button>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setStep(1)}>
+                <ArrowLeft data-icon="inline-start" />
+                Back
+              </Button>
+              <Button
+                disabled={!extractions.length}
+                onClick={() => setStep(3)}
+                variant="secondary"
+              >
+                Review existing OCR
+                <ArrowRight data-icon="inline-end" />
+              </Button>
+            </div>
+            {extractions.length < 1 ? (
+              <p className="text-sm text-status-uncertain">
+                Run verification unlocks after OCR finishes (or after Load demo
+                documents). Live OCR can take 1–2 min per file.
+              </p>
+            ) : null}
           </div>
         </div>
       )}
@@ -665,7 +969,8 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
           {!extractions.length ? (
             <Card className="border-border shadow-none">
               <CardContent className="p-6 text-sm text-muted-foreground">
-                No OCR results yet. Upload documents and run Sarvam Vision first.
+                No OCR results yet. Upload documents and run Sarvam Vision first —
+                or use Demo OCR / Load demo documents.
                 <div className="mt-4">
                   <Button onClick={() => setStep(2)}>Go to OCR upload</Button>
                 </div>
@@ -683,6 +988,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   >
                     {doc.doc_type}
                     {doc.handwritten ? " · HW" : ""}
+                    {doc.demo_fallback ? " · demo" : ""}
                   </Button>
                 ))}
                 <Badge variant="outline" className="rounded-full">
@@ -700,6 +1006,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                       <p className="text-sm text-muted-foreground">
                         {activeDoc.source_file} · {activeDoc.language}
                         {activeDoc.handwritten ? " · handwritten" : " · printed"}
+                        {activeDoc.demo_fallback ? " · demo fixture" : ""}
                       </p>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-3">
@@ -762,38 +1069,49 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => setStep(2)}>
-                  <ArrowLeft data-icon="inline-start" />
-                  Re-upload
-                </Button>
-                <Button variant="secondary" onClick={fillFormFromDocs}>
-                  Fill form from OCR
-                </Button>
-                <Button
-                  variant={reviewed ? "secondary" : "default"}
-                  onClick={() => {
-                    setReviewed(true);
-                    toast.success("OCR marked reviewed");
-                  }}
-                >
-                  Mark fields reviewed
-                </Button>
-                <Button
-                  disabled={!reviewed || !formComplete}
-                  onClick={() => void runVerify()}
-                >
-                  {busy ? (
-                    <Loader2 className="animate-spin" data-icon="inline-start" />
-                  ) : null}
-                  Run verification
-                  <ArrowRight data-icon="inline-end" />
-                </Button>
-                {!formComplete ? (
-                  <Button variant="ghost" onClick={() => setStep(1)}>
-                    Complete form first
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => setStep(2)}>
+                    <ArrowLeft data-icon="inline-start" />
+                    Re-upload
                   </Button>
-                ) : null}
+                  <Button variant="secondary" onClick={fillFormFromDocs}>
+                    Fill form from OCR
+                  </Button>
+                  <Button
+                    variant={reviewed ? "secondary" : "default"}
+                    onClick={() => {
+                      setReviewed(true);
+                      toast.success("OCR marked reviewed");
+                    }}
+                  >
+                    Mark fields reviewed
+                  </Button>
+                  <Button
+                    disabled={!reviewed || !formComplete || !formReviewed}
+                    onClick={() => void runVerify()}
+                  >
+                    {busy ? (
+                      <Loader2 className="animate-spin" data-icon="inline-start" />
+                    ) : null}
+                    Run verification
+                    <ArrowRight data-icon="inline-end" />
+                  </Button>
+                  {!formComplete ? (
+                    <Button variant="ghost" onClick={() => setStep(1)}>
+                      Complete form first
+                    </Button>
+                  ) : null}
+                </div>
+                {(!reviewed || !formReviewed || !extractions.length) && (
+                  <p className="text-sm text-status-uncertain">
+                    {!extractions.length
+                      ? "OCR must finish before Run verification."
+                      : !formReviewed
+                        ? "Go back to Form and tick “I reviewed the OCR / form answers” before verifying."
+                        : "Mark OCR fields as reviewed before Run verification."}
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -883,6 +1201,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   <StatusBadge status={mapStatus(c.status)} />
                 </div>
               ))}
+              {Object.keys(result.form_verification.approved_fields).length > 0 ? (
+                <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+                  FORM-ONLY (no KYC source):{" "}
+                  {Object.entries(result.form_verification.approved_fields)
+                    .map(([k, v]) => `${k}=${v}`)
+                    .join(" · ")}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -1006,7 +1332,8 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               </div>
               <Separator />
               <p className="text-xs text-muted-foreground">
-                Pack is built from operator-reviewed OCR + form answers — not sample data.
+                Pack is built from operator-reviewed OCR + form answers — not sample data
+                unless you explicitly used Demo OCR.
               </p>
             </CardContent>
           </Card>

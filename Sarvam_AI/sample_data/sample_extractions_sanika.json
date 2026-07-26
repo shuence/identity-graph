@@ -1,0 +1,80 @@
+[
+  {
+    "doc_type": "Aadhaar Card",
+    "source_file": "AdharCard_SanikaChavan.pdf",
+    "language": "en-IN",
+    "ocr_text": "(demo) Aadhaar of Sanika Chavan — Plot No 30, Sai Srushti, Aurangabad",
+    "fields": {
+      "full_name": "Sanika Chavan",
+      "father_name": "Santosh Chavan",
+      "dob": "15/08/2001",
+      "address": "Plot No 30, Sai Srushti, Laxmi Nagar, Stugirni Chowk, Aurangabad, Maharashtra 431001",
+      "id_number": "4821 6634 9012",
+      "confidence_notes": "All fields clearly legible on Aadhaar. Mobile NOT printed on Aadhaar."
+    }
+  },
+  {
+    "doc_type": "PAN Card",
+    "source_file": "PAN_CARD_SanikaChavan.pdf",
+    "language": "en-IN",
+    "ocr_text": "(demo) PAN of Sanika Chavan",
+    "fields": {
+      "full_name": "Sanika Chavan",
+      "father_name": "Santosh Chavan",
+      "dob": "15/08/2001",
+      "address": "UNCERTAIN",
+      "id_number": "ABCPS1234C",
+      "confidence_notes": "PAN has name, father, DOB, PAN number. No address on card."
+    }
+  },
+  {
+    "doc_type": "Bank Passbook",
+    "source_file": "Bank details.jpg",
+    "language": "en-IN",
+    "ocr_text": "(demo) Bank passbook first page — Sanika Chavan, Aurangabad",
+    "fields": {
+      "full_name": "Sanika Chavan",
+      "father_name": "Santosh Chavan",
+      "dob": "UNCERTAIN",
+      "address": "Plot No 30, Sai Srushti, Laxmi Nagar, Aurangabad 431001",
+      "id_number": "XXXXXX39101",
+      "confidence_notes": "Passbook shows account holder name and address. DOB not printed on first page."
+    }
+  },
+  {
+    "doc_type": "Driving License",
+    "source_file": "dl_sanika.jpg",
+    "language": "en-IN",
+    "ocr_text": "(demo) DL of Sanika Santosh Chavan",
+    "fields": {
+      "full_name": "Sanika Santosh Chavan",
+      "father_name": "Santosh Chavan",
+      "dob": "15-08-2001",
+      "address": "Flat 12, CIDCO N-4, Aurangabad 431003",
+      "id_number": "MH20 20190045678",
+      "confidence_notes": "DL still shows old CIDCO address — citizen requesting address update."
+    }
+  },
+  {
+    "doc_type": "Scanned Application Form",
+    "source_file": "sanika_chavan_filled_form.png",
+    "language": "en-IN",
+    "ocr_text": "(demo) OCR of filled Suvidha form IG-RTO-SANIKA-001",
+    "fields": {
+      "full_name": "Sanika Chavan",
+      "father_name": "Santosh Chavan",
+      "dob": "15/08/2001",
+      "address": "Plot No 30, Sai Srushti, Laxmi Nagar, Stugirni Chowk, Aurangabad, Maharashtra 431001",
+      "id_number": "MH20 20190045678",
+      "mobile": "7887403910",
+      "email": "sanika.chavan@email.com",
+      "blood_group": "B+",
+      "emergency_contact": "Santosh Chavan / 9881402910",
+      "change_type": "Address Update",
+      "old_address": "Flat 12, CIDCO N-4, Aurangabad 431003",
+      "category": "General",
+      "reason": "Current address change for DL / Aadhaar link",
+      "confidence_notes": "FORM-ONLY fields extracted from scanned form. Cross-check name/DOB/address against Aadhaar + other IDs."
+    }
+  }
+]

@@ -1,0 +1,83 @@
+{
+  "citizen": "Sanika Chavan",
+  "form_id": "IG-RTO-SANIKA-001",
+  "source_file": "sanika_chavan_filled_form.png",
+  "service": "rto_dl_update",
+  "ocr_from_scanned_form": {
+    "full_name": "Sanika Chavan",
+    "father_name": "Santosh Chavan",
+    "dob": "15/08/2001",
+    "gender": "Female",
+    "aadhaar_masked": "XXXX XXXX 4821",
+    "dl_number": "MH20 20190045678",
+    "address": "Plot No 30, Sai Srushti, Laxmi Nagar, Stugirni Chowk, Aurangabad, Maharashtra 431001",
+    "pincode": "431001",
+    "mobile": "7887403910",
+    "email": "sanika.chavan@email.com",
+    "blood_group": "B+",
+    "emergency_contact": "Santosh Chavan / 9881402910",
+    "change_type": "Address Update",
+    "old_address": "Flat 12, CIDCO N-4, Aurangabad 431003",
+    "category": "General",
+    "reason": "Current address change for DL / Aadhaar link"
+  },
+  "ekyc_available_fields": [
+    "full_name",
+    "dob",
+    "gender",
+    "aadhaar_number",
+    "address",
+    "photo"
+  ],
+  "form_only_not_in_ekyc": [
+    "mobile",
+    "email",
+    "blood_group",
+    "emergency_contact",
+    "change_type",
+    "old_address",
+    "category",
+    "reason",
+    "father_name"
+  ],
+  "verification_plan": [
+    "Operator scans filled paper form (PNG/JPG)",
+    "OCR extracts block-letter fields from form image",
+    "Compare OCR name / father / DOB / address / DL no. against uploaded Aadhaar + DL",
+    "FORM-ONLY fields (mobile, email, blood group, etc.) have no KYC source — accept from form after operator confirm",
+    "Flag CRITICAL if form name/address disagrees with Aadhaar or DL"
+  ],
+  "expected_checks": [
+    {
+      "field": "full_name",
+      "form_ocr": "Sanika Chavan",
+      "aadhaar": "Sanika Chavan",
+      "dl": "Sanika Santosh Chavan",
+      "status": "VARIANT",
+      "detail": "DL includes father's name in full name — harmless variant"
+    },
+    {
+      "field": "father_name",
+      "form_ocr": "Santosh Chavan",
+      "aadhaar": "Santosh Chavan",
+      "dl": "Santosh Chavan",
+      "status": "MATCH"
+    },
+    {
+      "field": "address",
+      "form_ocr": "Plot No 30, Sai Srushti...",
+      "aadhaar": "Plot No 30, Sai Srushti...",
+      "dl": "Flat 12, CIDCO N-4...",
+      "status": "CRITICAL vs DL / MATCH vs Aadhaar",
+      "detail": "New address matches Aadhaar; old address still on DL — expected for address-update request"
+    },
+    {
+      "field": "mobile",
+      "form_ocr": "7887403910",
+      "aadhaar": null,
+      "dl": null,
+      "status": "FORM-ONLY",
+      "detail": "Not on eKYC / ID cards — take from scanned form after operator confirm"
+    }
+  ]
+}

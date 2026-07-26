@@ -18,13 +18,17 @@ from pydantic import BaseModel, Field
 from identitygraph.config import DOC_TYPES, FIELD_LABELS, LANGUAGES, REMEDIATION_PORTALS
 from identitygraph.form_check import verify_form_against_docs
 from identitygraph.knowledge_base import validate_against_knowledge
+from identitygraph.operator import serialize_all_services, serialize_service
 from identitygraph.reconcile import ReconciliationResult, reconcile
 from identitygraph.report import build_audit_pdf, build_filled_form_pdf
 from identitygraph.services import get_service
-from identitygraph.operator import serialize_all_services, serialize_service
 
 ROOT = Path(__file__).parent
+SAMPLE = ROOT / "sample_data"
 load_dotenv(ROOT / ".env")
+
+# Pseudo-doc types that are scanned forms, not identity cards.
+_FORM_DOC_TYPES = {"Scanned Application Form", "Application Form", "Filled Form"}
 
 app = FastAPI(title="IdentityGraph Suvidha Desk API", version="1.0.0")
 app.add_middleware(
@@ -51,16 +55,97 @@ def _api_key() -> str:
 
 
 def _demo_form_path(service: dict) -> Path:
-    return ROOT / "sample_data" / (service.get("demo_answers") or "sample_form_answers.json")
+    return SAMPLE / (service.get("demo_answers") or "sample_form_answers.json")
 
 
 def _demo_docs_path(service_id: str) -> Path:
     special = {
-        "rto_dl_update": "sample_extractions_rto.json",
+        "rto_dl_update": "sample_extractions_sanika.json",
         "scheme_apply": "sample_extractions_scheme.json",
         "grievance_complaint": "sample_extractions.json",
     }
-    return ROOT / "sample_data" / special.get(service_id, "sample_extractions.json")
+    return SAMPLE / special.get(service_id, "sample_extractions.json")
+
+
+def _id_document_extractions(extractions: list[dict]) -> list[dict]:
+    """Keep only KYC/ID docs — exclude scanned application forms from cross-doc reconcile."""
+    return [
+        e for e in extractions
+        if (e.get("doc_type") or "") not in _FORM_DOC_TYPES
+    ]
+
+
+def _filter_form_answers(service: dict, answers: dict) -> dict[str, str]:
+    keys = {f["key"] for f in service["form_fields"]}
+    return {k: str(v) for k, v in answers.items() if k in keys and v is not None}
+
+
+def _guess_doc_type(filename: str, preferred: list[str]) -> str:
+    name = filename.lower().replace(" ", "")
+    rules = [
+        (("pan",), "PAN Card"),
+        (("aadhaar", "adhar", "aadhar"), "Aadhaar Card"),
+        (("passbook", "bank", "statement"), "Bank Passbook"),
+        (("voter", "epic"), "Voter ID"),
+        (("ration",), "Ration Card"),
+        (("dl", "licence", "license", "driving"), "Driving License"),
+        (("passport",), "Passport"),
+        (("form", "sanika", "application"), "Scanned Application Form"),
+    ]
+    for keys, doc in rules:
+        if any(k in name for k in keys):
+            if doc in preferred or doc in DOC_TYPES or doc in _FORM_DOC_TYPES:
+                return doc
+    return preferred[0] if preferred else "Other"
+
+
+def _looks_like_sanika_demo(filename: str) -> bool:
+    name = filename.lower()
+    return "sanika" in name or "filled_form" in name or "ig-rto-sanika" in name
+
+
+def _prefer_sanika_demo(service_id: str, filenames: list[str]) -> bool:
+    """Use Sanika fixtures for RTO or when any upload name references Sanika."""
+    if service_id == "rto_dl_update":
+        return True
+    return any(_looks_like_sanika_demo(n) for n in filenames)
+
+
+def _load_demo_extractions(service_id: str, filenames: list[str] | None = None) -> list[dict]:
+    filenames = filenames or []
+    if _prefer_sanika_demo(service_id, filenames):
+        sanika = SAMPLE / "sample_extractions_sanika.json"
+        if sanika.exists():
+            return _id_document_extractions(json.loads(sanika.read_text()))
+    docs_path = _demo_docs_path(service_id)
+    return _id_document_extractions(json.loads(docs_path.read_text()))
+
+
+def _require_sarvam_key() -> str:
+    key = _api_key()
+    if not key:
+        raise HTTPException(
+            503,
+            "Sarvam API key not configured. Set API_KEY in Sarvam_AI/.env for live OCR, "
+            "or click Demo OCR / Load demo documents for sample data.",
+        )
+    return key
+
+
+async def _save_upload(upload: UploadFile) -> tuple[str, str]:
+    """Write upload to a temp file. Returns (path, original_filename)."""
+    original = upload.filename or "upload.bin"
+    suffix = Path(original).suffix or ".bin"
+    data = await upload.read()
+    if not data:
+        raise HTTPException(400, f"Empty upload: {original}")
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    try:
+        tmp.write(data)
+        tmp.flush()
+        return tmp.name, original
+    finally:
+        tmp.close()
 
 
 class VerifyRequest(BaseModel):
@@ -82,15 +167,16 @@ def _run_verify(body: VerifyRequest) -> dict:
     except KeyError as exc:
         raise HTTPException(404, f"Unknown service: {body.service_id}") from exc
 
+    id_docs = _id_document_extractions(body.extractions)
     form_ver = verify_form_against_docs(
-        body.form_answers, service["form_fields"], body.extractions
+        body.form_answers, service["form_fields"], id_docs
     )
     cross: ReconciliationResult = (
-        reconcile(body.extractions) if len(body.extractions) >= 2 else ReconciliationResult()
+        reconcile(id_docs) if len(id_docs) >= 2 else ReconciliationResult()
     )
     statuses = {c.form_key: c.status for c in form_ver.checks}
     kb = validate_against_knowledge(
-        body.service_id, body.form_answers, body.extractions, statuses
+        body.service_id, body.form_answers, id_docs, statuses
     )
 
     if cross.primary_blocker_doc:
@@ -140,23 +226,27 @@ def _run_verify(body: VerifyRequest) -> dict:
 
 @app.get("/health")
 def health():
+    key_loaded = bool(_api_key())
     return {
         "ok": True,
         "service": "identitygraph-suvidha-desk",
         "mode": "python-fastapi",
-        "sarvam_key_loaded": bool(_api_key()),
+        "sarvam_key_loaded": key_loaded,
+        "sarvam_configured": key_loaded,
         "doc_types": DOC_TYPES,
     }
 
 
 @app.get("/meta")
 def meta():
+    key_loaded = bool(_api_key())
     return {
         "doc_types": DOC_TYPES,
         "field_labels": FIELD_LABELS,
         "languages": LANGUAGES,
         "remediation_portals": REMEDIATION_PORTALS,
-        "sarvam_key_loaded": bool(_api_key()),
+        "sarvam_key_loaded": key_loaded,
+        "sarvam_configured": key_loaded,
     }
 
 
@@ -174,19 +264,34 @@ def service_detail(service_id: str):
 
 
 @app.get("/demo/{service_id}")
-def demo_bundle(service_id: str):
+def demo_bundle(service_id: str, citizen: str = ""):
     try:
         service = get_service(service_id)
     except KeyError as exc:
         raise HTTPException(404, f"Unknown service: {service_id}") from exc
-    form_path = _demo_form_path(service)
-    docs_path = _demo_docs_path(service_id)
-    if not form_path.exists() or not docs_path.exists():
-        raise HTTPException(404, "Demo sample data missing")
+
+    want_sanika = (
+        citizen.lower() in ("sanika", "sanika_chavan") or service_id == "rto_dl_update"
+    )
+    if want_sanika and (SAMPLE / "sample_form_sanika.json").exists():
+        form_path = SAMPLE / "sample_form_sanika.json"
+        raw_extractions = _load_demo_extractions(service_id, ["sanika"])
+    else:
+        form_path = _demo_form_path(service)
+        docs_path = _demo_docs_path(service_id)
+        if not form_path.exists() or not docs_path.exists():
+            raise HTTPException(404, "Demo sample data missing for this service")
+        raw_extractions = _id_document_extractions(json.loads(docs_path.read_text()))
+
+    if not form_path.exists():
+        raise HTTPException(404, "Demo sample data missing for this service")
+
+    raw_answers = json.loads(form_path.read_text())
     return {
         "service_id": service_id,
-        "form_answers": json.loads(form_path.read_text()),
-        "extractions": json.loads(docs_path.read_text()),
+        "form_answers": _filter_form_answers(service, raw_answers),
+        "extractions": raw_extractions,
+        "citizen": raw_answers.get("full_name", ""),
     }
 
 
@@ -196,7 +301,7 @@ def verify(body: VerifyRequest):
 
 
 @app.post("/extract")
-async def extract_documents(
+async def extract_documents_live(
     files: list[UploadFile] = File(...),
     doc_types: str = Form(...),
     language: str = Form("en-IN"),
@@ -254,9 +359,183 @@ async def extract_documents(
             os.unlink(path)
 
     return {
-        "extractions": records,
+        "extractions": _id_document_extractions(records),
         "failures": failures,
         "engine": "sarvam_vision_30b",
+    }
+
+
+@app.post("/extract/form")
+async def extract_form(
+    service_id: str = Form(...),
+    file: UploadFile = File(...),
+    language: str = Form("en-IN"),
+    demo: str = Form("false"),
+):
+    """OCR a scanned application form → service form_answers for operator review."""
+    try:
+        service = get_service(service_id)
+    except KeyError as exc:
+        raise HTTPException(404, f"Unknown service: {service_id}") from exc
+
+    force_demo = demo.lower() in ("1", "true", "yes")
+
+    # Demo ONLY when explicitly requested — never silently swap another citizen's data.
+    if force_demo:
+        form_path = _demo_form_path(service)
+        if not form_path.exists():
+            raise HTTPException(404, "Demo form answers missing")
+        answers = _filter_form_answers(service, json.loads(form_path.read_text()))
+        if _prefer_sanika_demo(service_id, [file.filename or ""]):
+            sanika = SAMPLE / "sample_form_sanika.json"
+            if sanika.exists():
+                answers = _filter_form_answers(service, json.loads(sanika.read_text()))
+        return {
+            "service_id": service_id,
+            "source_file": file.filename or "demo_form.png",
+            "language": language,
+            "ocr_text": "(demo) Sample form answers — not live OCR of your upload.",
+            "form_answers": answers,
+            "demo_fallback": True,
+            "needs_review": True,
+        }
+
+    _require_sarvam_key()
+    from identitygraph.sarvam_pipeline import get_client, process_scanned_form
+
+    path = None
+    try:
+        path, original = await _save_upload(file)
+        client = get_client(_api_key())
+        result = process_scanned_form(
+            client, path, service["form_fields"], language=language
+        )
+        result["source_file"] = original
+        result["service_id"] = service_id
+        result["needs_review"] = True
+        result["demo_fallback"] = False
+        result["form_answers"] = _filter_form_answers(
+            service, result.get("form_answers") or {}
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"Form OCR failed: {exc}") from exc
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
+@app.post("/extract/documents")
+async def extract_documents(
+    service_id: str = Form(...),
+    files: list[UploadFile] = File(...),
+    doc_types: str = Form("[]"),
+    languages: str = Form("[]"),
+    demo: str = Form("false"),
+):
+    """OCR multiple KYC documents. Returns extractions (+ per-file failures)."""
+    try:
+        service = get_service(service_id)
+    except KeyError as exc:
+        raise HTTPException(404, f"Unknown service: {service_id}") from exc
+
+    try:
+        type_list = json.loads(doc_types) if doc_types else []
+        lang_list = json.loads(languages) if languages else []
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "doc_types and languages must be JSON arrays") from exc
+
+    if not files:
+        raise HTTPException(400, "No files uploaded")
+
+    preferred = list(service.get("required_docs") or []) + list(
+        service.get("optional_docs") or []
+    )
+    force_demo = demo.lower() in ("1", "true", "yes")
+    filenames = [f.filename or f"file_{i}" for i, f in enumerate(files)]
+
+    # Demo ONLY when explicitly requested — live OCR never substitutes fixtures.
+    if force_demo:
+        all_docs = _load_demo_extractions(service_id, filenames)
+        if not all_docs:
+            raise HTTPException(404, "Demo extractions missing")
+        requested = [
+            (
+                type_list[i]
+                if i < len(type_list)
+                else _guess_doc_type(f.filename or "", preferred)
+            )
+            for i, f in enumerate(files)
+        ]
+        by_type = {e["doc_type"]: e for e in all_docs}
+        picked = []
+        for i, dtype in enumerate(requested):
+            if dtype in by_type:
+                rec = dict(by_type[dtype])
+                rec["source_file"] = files[i].filename or rec.get("source_file")
+                rec["demo_fallback"] = True
+                picked.append(rec)
+            elif all_docs:
+                rec = dict(all_docs[i % len(all_docs)])
+                rec["doc_type"] = dtype
+                rec["source_file"] = files[i].filename or rec.get("source_file")
+                rec["demo_fallback"] = True
+                picked.append(rec)
+        return {
+            "service_id": service_id,
+            "extractions": picked or [{**e, "demo_fallback": True} for e in all_docs],
+            "failures": [],
+            "demo_fallback": True,
+            "message": (
+                "Demo fixtures loaded (not OCR of your files). "
+                "Set API_KEY in Sarvam_AI/.env and click OCR documents for live extraction."
+            ),
+        }
+
+    _require_sarvam_key()
+    from identitygraph.sarvam_pipeline import get_client, process_document
+
+    client = get_client(_api_key())
+    extractions: list[dict] = []
+    failures: list[dict] = []
+
+    for i, upload in enumerate(files):
+        dtype = (
+            type_list[i]
+            if i < len(type_list) and type_list[i]
+            else _guess_doc_type(upload.filename or "", preferred)
+        )
+        lang = lang_list[i] if i < len(lang_list) and lang_list[i] else "en-IN"
+        path = None
+        try:
+            path, original = await _save_upload(upload)
+            rec = process_document(client, path, dtype, language=lang)
+            rec["source_file"] = original
+            rec["demo_fallback"] = False
+            extractions.append(rec)
+        except Exception as exc:
+            failures.append({
+                "file": upload.filename or f"file_{i}",
+                "doc_type": dtype,
+                "error": str(exc),
+            })
+        finally:
+            if path:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+    return {
+        "service_id": service_id,
+        "extractions": _id_document_extractions(extractions),
+        "failures": failures,
+        "demo_fallback": False,
     }
 
 
@@ -305,14 +584,15 @@ def pack_audit(body: VerifyRequest):
         service = get_service(body.service_id)
     except KeyError as exc:
         raise HTTPException(404, f"Unknown service: {body.service_id}") from exc
+    id_docs = _id_document_extractions(body.extractions)
     form_ver = verify_form_against_docs(
-        body.form_answers, service["form_fields"], body.extractions
+        body.form_answers, service["form_fields"], id_docs
     )
     cross = (
-        reconcile(body.extractions) if len(body.extractions) >= 2 else ReconciliationResult()
+        reconcile(id_docs) if len(id_docs) >= 2 else ReconciliationResult()
     )
     pdf = build_audit_pdf(
-        body.extractions,
+        id_docs,
         cross,
         form_checks=form_ver.checks,
         service_title=service["title"],
