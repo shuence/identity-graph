@@ -46,7 +46,6 @@ export type Extraction = {
   handwritten?: boolean;
   ocr_text?: string;
   fields: Record<string, string>;
-  demo_fallback?: boolean;
 };
 
 export type FormCheck = {
@@ -123,7 +122,6 @@ export type FormExtractResult = {
   language: string;
   ocr_text?: string;
   form_answers: Record<string, string>;
-  demo_fallback: boolean;
   needs_review?: boolean;
   error?: string;
 };
@@ -132,7 +130,6 @@ export type DocumentExtractResult = {
   service_id: string;
   extractions: Extraction[];
   failures: { file: string; doc_type: string; error: string }[];
-  demo_fallback: boolean;
   message?: string;
 };
 
@@ -196,16 +193,6 @@ export function fetchMeta() {
   return api<Meta>("/meta");
 }
 
-export function fetchDemo(serviceId: string, citizen?: string) {
-  const q = citizen ? `?citizen=${encodeURIComponent(citizen)}` : "";
-  return api<{
-    service_id: string;
-    form_answers: Record<string, string>;
-    extractions: Extraction[];
-    citizen?: string;
-  }>(`/demo/${serviceId}${q}`);
-}
-
 export function verifyCase(body: {
   service_id: string;
   form_answers: Record<string, string>;
@@ -255,36 +242,17 @@ export async function extractDocuments(input: {
   }>;
 }
 
-/** Scanned application form OCR via POST /extract/form (demo=true for fixtures only). */
+/** Scanned application form OCR via POST /extract/form. */
 export function extractForm(opts: {
   serviceId: string;
   file: File;
   language?: string;
-  demo?: boolean;
 }) {
   const form = new FormData();
   form.append("service_id", opts.serviceId);
   form.append("file", opts.file);
   form.append("language", opts.language || "en-IN");
-  form.append("demo", opts.demo ? "true" : "false");
   return multipart<FormExtractResult>("/extract/form", form);
-}
-
-/** Service-scoped KYC OCR via POST /extract/documents (demo=true for fixtures only). */
-export function extractServiceDocuments(opts: {
-  serviceId: string;
-  files: File[];
-  docTypes: string[];
-  languages?: string[];
-  demo?: boolean;
-}) {
-  const form = new FormData();
-  form.append("service_id", opts.serviceId);
-  opts.files.forEach((f) => form.append("files", f));
-  form.append("doc_types", JSON.stringify(opts.docTypes));
-  form.append("languages", JSON.stringify(opts.languages || []));
-  form.append("demo", opts.demo ? "true" : "false");
-  return multipart<DocumentExtractResult>("/extract/documents", form);
 }
 
 export async function speakPrompt(text: string, language = "hi-IN") {

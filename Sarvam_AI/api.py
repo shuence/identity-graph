@@ -135,11 +135,28 @@ def _require_sarvam_key() -> str:
 async def _save_upload(upload: UploadFile) -> tuple[str, str]:
     """Write upload to a temp file. Returns (path, original_filename)."""
     original = upload.filename or "upload.bin"
-    suffix = Path(original).suffix or ".bin"
+    # Normalize extension so Sarvam Vision accepts .JPG / .JPEG / odd casings.
+    raw_suf = Path(original).suffix or ""
+    suf = raw_suf.lower()
+    if suf in (".jpeg", ".jpe"):
+        suf = ".jpg"
+    if not suf or suf == ".bin":
+        # Infer from content-type when the browser omits an extension.
+        ct = (upload.content_type or "").lower()
+        if "jpeg" in ct or "jpg" in ct:
+            suf = ".jpg"
+        elif "png" in ct:
+            suf = ".png"
+        elif "webp" in ct:
+            suf = ".webp"
+        elif "pdf" in ct:
+            suf = ".pdf"
+        else:
+            suf = ".jpg"
     data = await upload.read()
     if not data:
         raise HTTPException(400, f"Empty upload: {original}")
-    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp = tempfile.NamedTemporaryFile(suffix=suf, delete=False)
     try:
         tmp.write(data)
         tmp.flush()
@@ -407,8 +424,8 @@ async def extract_form(
     path = None
     try:
         path, original = await _save_upload(file)
-        # Guard obvious empty / tiny uploads before burning a Vision job.
-        if os.path.getsize(path) < 2_000:
+        # Guard obvious empty uploads before burning a Vision job.
+        if os.path.getsize(path) < 500:
             raise HTTPException(
                 400,
                 f"Upload too small ({os.path.getsize(path)} bytes). "
