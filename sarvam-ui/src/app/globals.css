@@ -188,3 +188,78 @@
 @utility animate-fade-up {
   animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* Suvidha desk: flatter, government-portal panels (Passport Seva / CSC style) */
+.desk-gov {
+  --radius: 0.2rem;
+}
+
+.desk-gov [data-slot="card"] {
+  border-radius: 2px;
+  background: var(--card);
+  outline: 1px solid var(--border);
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-ring-offset-shadow: 0 0 #0000;
+  box-shadow: none;
+}
+
+.desk-gov [data-slot="card-header"],
+.desk-gov [data-slot="card-footer"] {
+  border-radius: 0;
+}
+
+.desk-panel {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 2px;
+}
+
+.desk-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  background: #f3f6fb;
+  padding: 0.65rem 0.9rem;
+  font-family: var(--font-heading), var(--font-sans), sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--indigo-deep);
+}
+
+.desk-row {
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 0.9rem;
+}
+
+.desk-row:last-child {
+  border-bottom: none;
+}
+
+.desk-notice {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  background: #f7f9fc;
+  border-radius: 2px;
+  padding: 0.85rem 1rem;
+}
+
+.desk-tricolor {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  height: 3px;
+  width: 100%;
+}
+
+.desk-tricolor > span:nth-child(1) {
+  background: #ff9933;
+}
+.desk-tricolor > span:nth-child(2) {
+  background: #ffffff;
+}
+.desk-tricolor > span:nth-child(3) {
+  background: #138808;
+}

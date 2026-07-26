@@ -68,10 +68,17 @@ def test_sample_names_are_variants_not_critical():
     assert crit_names == [], f"Name variants wrongly flagged critical: {crit_names}"
 
 
-def test_passbook_uncertain_dob_not_guessed():
+def test_passbook_uncertain_dob_skipped_in_cross_doc():
+    """Bank passbook without DOB must not create UNCERTAIN spam vs Aadhaar/PAN."""
     result = reconcile(SAMPLES)
-    unc = [c for c in result.comparisons if c.status == UNCERTAIN and c.field == "dob"]
-    assert any("Bank Passbook" in (c.doc_a, c.doc_b) for c in unc)
+    unc_dob = [
+        c for c in result.comparisons
+        if c.status == UNCERTAIN and c.field == "dob"
+    ]
+    assert unc_dob == [], f"Absent DOB should be skipped, got: {unc_dob}"
+    # Readable DOBs (Aadhaar vs PAN) should still be compared when both exist
+    dob_pairs = [c for c in result.comparisons if c.field == "dob"]
+    assert all(c.status != UNCERTAIN for c in dob_pairs)
 
 
 def test_form_matches_aadhaar_on_demo_answers():

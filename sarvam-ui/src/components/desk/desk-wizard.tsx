@@ -5,10 +5,16 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
+  CheckCircle2,
+  Clock,
   Download,
+  ExternalLink,
   FileScan,
   Loader2,
   ScanSearch,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
   Trash2,
   Upload,
   Volume2,
@@ -22,7 +28,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/identity/status-badge";
 import {
   OperatorRail,
@@ -32,6 +37,7 @@ import {
   downloadPack,
   extractDocuments,
   extractForm,
+  fetchDemo,
   fetchHealth,
   fetchService,
   fetchServices,
@@ -83,6 +89,31 @@ function isUncertain(v: string | undefined) {
   return !v || v.trim().toUpperCase() === "UNCERTAIN";
 }
 
+/** Find where a value appears in raw OCR text — provenance for the operator. */
+function ocrSnippet(
+  text: string | undefined,
+  value: string | undefined
+): string | null {
+  if (!text || !value || isUncertain(value)) return null;
+  const clean = value.trim();
+  const words = clean.split(/\s+/).filter((w) => w.length > 2);
+  const candidates = [clean, ...words.sort((a, b) => b.length - a.length)].slice(
+    0,
+    4
+  );
+  const lower = text.toLowerCase();
+  for (const cand of candidates) {
+    const idx = lower.indexOf(cand.toLowerCase());
+    if (idx >= 0) {
+      const start = Math.max(0, idx - 45);
+      const end = Math.min(text.length, idx + cand.length + 45);
+      const chunk = text.slice(start, end).replace(/\s+/g, " ").trim();
+      return `${start > 0 ? "…" : ""}${chunk}${end < text.length ? "…" : ""}`;
+    }
+  }
+  return null;
+}
+
 function isLongField(key: string) {
   return (
     key.includes("address") ||
@@ -120,6 +151,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
   const [formFile, setFormFile] = useState<File | null>(null);
   const [formOcrNote, setFormOcrNote] = useState<string | null>(null);
   const [formReviewed, setFormReviewed] = useState(false);
+  const [judgeMode, setJudgeMode] = useState(false);
 
   const servicesByMode = useMemo(() => {
     const groups: { mode: string; items: Service[] }[] = [];
@@ -170,6 +202,47 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
     setFormFile(null);
     setFormOcrNote(null);
     setFormReviewed(false);
+    setJudgeMode(false);
+  }
+
+  /** One-click judge path: Sanika RTO fixtures → review → verify → pack. */
+  async function runJudgeDemo() {
+    setBusy(true);
+    try {
+      const id = "rto_dl_update";
+      setServiceId(id);
+      const detail = await fetchService(id);
+      setService(detail);
+      const demo = await fetchDemo(id, "sanika");
+      setAnswers(demo.form_answers);
+      setExtractions(demo.extractions);
+      setFormReviewed(true);
+      setReviewed(true);
+      setJudgeMode(true);
+      setFormOcrNote(
+        `Judge demo: ${demo.citizen || "Sanika Chavan"} — fixtures loaded (no API burn)`
+      );
+      setUploads([]);
+      setNotes(
+        "Judge demo: Sanika Chavan RTO address update. Blockers/variants are intentional — show MATCH / VARIANT / CRITICAL / UNCERTAIN."
+      );
+      const v = await verifyCase({
+        service_id: id,
+        form_answers: demo.form_answers,
+        extractions: demo.extractions,
+        operator_notes:
+          "Judge demo pack — Suvidha desk caught mismatches before portal upload.",
+      });
+      setResult(v);
+      setStep(4);
+      toast.success(
+        `Judge demo ready · ${Math.round(v.knowledge.score)} · ${v.knowledge.grade} · ${v.cross_document.summary.blockers} blocker(s)`
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Judge demo failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function selectService(id: string) {
@@ -294,23 +367,49 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
   function fillFormFromDocs() {
     if (!service) return;
+    const priority = [
+      "Aadhaar Card",
+      "PAN Card",
+      "Driving License",
+      "Voter ID",
+      "Passport",
+      "Ration Card",
+      "School Certificate",
+      "Bank Passbook",
+    ];
     const next = { ...answers };
+    let filled = 0;
     for (const spec of service.form_fields) {
       const compare = spec.compare_to;
       if (!compare) continue;
-      const preferred =
-        (spec.compare_doc &&
-          extractions.find((d) => d.doc_type === spec.compare_doc)) ||
-        extractions.find((d) => d.doc_type === "Aadhaar Card") ||
-        extractions[0];
-      if (!preferred) continue;
-      const val = preferred.fields[compare] || preferred.fields[spec.key];
-      if (val && !isUncertain(val)) next[spec.key] = val;
+      const ordered = [...extractions].sort((a, b) => {
+        const pa = priority.indexOf(a.doc_type);
+        const pb = priority.indexOf(b.doc_type);
+        const preferA =
+          spec.compare_doc && a.doc_type === spec.compare_doc ? -1 : 0;
+        const preferB =
+          spec.compare_doc && b.doc_type === spec.compare_doc ? -1 : 0;
+        return preferA - preferB || (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
+      });
+      const hit = ordered.find((d) => {
+        const val = d.fields[compare] || d.fields[spec.key];
+        return val && !isUncertain(val);
+      });
+      if (!hit) continue;
+      const val = hit.fields[compare] || hit.fields[spec.key];
+      if (val) {
+        next[spec.key] = val;
+        filled += 1;
+      }
     }
     setAnswers(next);
     setFormReviewed(false);
-    toast.success("Form filled from reviewed OCR — check high-stakes fields");
-    setStep(1);
+    toast.success(
+      filled
+        ? `Filled ${filled} form field(s) from best readable OCR (Aadhaar → PAN → …). Review on Form step.`
+        : "No readable OCR fields to copy — check document extractions"
+    );
+    if (filled) setStep(1);
   }
 
   async function playFieldPrompt(fieldKey: string) {
@@ -390,6 +489,28 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
     [extractions]
   );
 
+  const impact = useMemo(() => {
+    if (!result) return null;
+    const blockers = result.cross_document.summary.blockers;
+    const formBlockers = result.form_verification.checks.filter(
+      (c) => c.status === "CRITICAL"
+    ).length;
+    const caught = blockers + formBlockers;
+    const variants = result.cross_document.summary.variants;
+    const minutesSaved = Math.max(8, 4 + caught * 3 + variants);
+    return {
+      caught,
+      blockers,
+      formBlockers,
+      variants,
+      uncertain: result.cross_document.summary.uncertain,
+      minutesSaved,
+      ready: Boolean(result.ready_for_portal) && caught === 0,
+      score: Math.round(result.knowledge.score),
+      grade: result.knowledge.grade,
+    };
+  }, [result]);
+
   const activeDoc = extractions[reviewIdx];
 
   if (bootError) {
@@ -436,66 +557,134 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             ? `${service.title} · ${fillModeLabel(service.fill_mode) || "operator desk"} — voice, OCR, mismatch verify, portal pack`
             : "Sarvam Epoch · CSC desk for India's still-manual identity forms"
         }
+        className="border-border bg-card px-4 py-4 md:px-5"
         actions={
-          <Badge
-            variant="secondary"
-            className={cn(
-              "rounded-full",
-              apiLive
-                ? "border-status-match/40 bg-status-match/10 text-status-match"
-                : "border-status-uncertain/40 text-status-uncertain"
-            )}
-          >
-            {apiLive ? "Sarvam OCR live" : "API not connected"}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void runJudgeDemo()}
+              className="rounded-sm"
+            >
+              {busy ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : (
+                <Sparkles data-icon="inline-start" />
+              )}
+              Judge demo (90s)
+            </Button>
+            {judgeMode ? (
+              <Badge
+                variant="secondary"
+                className="rounded-sm border-primary/40 bg-primary/10 text-primary"
+              >
+                Judge demo
+              </Badge>
+            ) : null}
+            <Badge
+              variant="secondary"
+              className={cn(
+                "rounded-sm",
+                apiLive
+                  ? "border-status-match/40 bg-status-match/10 text-status-match"
+                  : "border-status-uncertain/40 text-status-uncertain"
+              )}
+            >
+              {apiLive ? "Sarvam OCR live" : "API not connected"}
+            </Badge>
+          </div>
         }
       />
 
-      <div className="flex flex-wrap gap-2">
-        {STEPS.map((label, i) => (
-          <button
-            key={label}
-            type="button"
-            onClick={() => {
-              if (i === 0 || i === 1) setStep(i);
-              if (i === 2) setStep(2);
-              if (i === 3 && extractions.length) setStep(3);
-              if (i === 4 && result) setStep(4);
-              if (i === 5 && result) setStep(5);
-            }}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-              i === step
-                ? "border-primary bg-primary text-primary-foreground"
-                : i < step
-                  ? "border-secondary bg-secondary text-secondary-foreground"
-                  : "border-border text-muted-foreground"
-            )}
-          >
-            {i + 1}. {label}
-          </button>
-        ))}
-      </div>
+      <nav
+        aria-label="Desk steps"
+        className="desk-panel overflow-hidden bg-card"
+      >
+        <ol className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          {STEPS.map((label, i) => {
+            const done = i < step;
+            const current = i === step;
+            return (
+              <li key={label} className="min-w-0 border-b border-r border-border last:border-r-0 sm:[&:nth-child(3)]:border-r-0 lg:[&:nth-child(3)]:border-r lg:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (i === 0 || i === 1) setStep(i);
+                    if (i === 2) setStep(2);
+                    if (i === 3 && extractions.length) setStep(3);
+                    if (i === 4 && result) setStep(4);
+                    if (i === 5 && result) setStep(5);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs transition-colors",
+                    current && "bg-[#0b3d91] text-white",
+                    done && !current && "bg-[#e8eef8] text-[#0b3d91]",
+                    !done && !current && "bg-card text-muted-foreground hover:bg-muted/40"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-6 shrink-0 items-center justify-center border text-[11px] font-semibold",
+                      current
+                        ? "border-white/40 bg-white/15 text-white"
+                        : done
+                          ? "border-[#0b3d91]/30 bg-white text-[#0b3d91]"
+                          : "border-border bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="truncate font-medium">{label}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
 
       {step === 0 && (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-5">
+          <div className="desk-notice flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-semibold text-[#0b3d91]">
+                Quick path for judges — Sanika Chavan RTO demo
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Loads fixtures → MATCH / VARIANT / CRITICAL / UNCERTAIN → portal
+                pack PDFs. No OCR API burn.
+              </p>
+            </div>
+            <Button
+              disabled={busy}
+              onClick={() => void runJudgeDemo()}
+              className="shrink-0 rounded-sm"
+            >
+              {busy ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : (
+                <Sparkles data-icon="inline-start" />
+              )}
+              Run judge demo
+            </Button>
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-3xl text-sm text-muted-foreground">
-              Pick the form the citizen needs. Catalog is evidence-backed: paper
-              block-letter forms, BLO/ERO offline, CSC-assisted portals, and
-              identity-mismatch remediation — not DigiLocker/GST self-serve.
+              Select the service scheme. Catalog covers paper block-letter forms,
+              BLO/ERO offline, CSC-assisted portals, and identity-mismatch
+              remediation.
             </p>
-            <Button disabled={!service} onClick={() => setStep(1)}>
+            <Button disabled={!service} onClick={() => setStep(1)} className="rounded-sm">
               Next — Application form
               <ArrowRight data-icon="inline-end" />
             </Button>
           </div>
           {servicesByMode.map((group) => (
-            <div key={group.mode} className="flex flex-col gap-3">
-              <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <div key={group.mode} className="desk-panel overflow-hidden">
+              <div className="desk-panel-head">
                 {fillModeLabel(group.mode) || group.mode}
-              </h2>
-              <div className="grid gap-4 md:grid-cols-2">
+              </div>
+              <div className="divide-y divide-border bg-card">
                 {group.items.map((s) => {
                   const on = s.id === serviceId;
                   return (
@@ -504,28 +693,37 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                       type="button"
                       onClick={() => void selectService(s.id)}
                       className={cn(
-                        "rounded-xl border p-5 text-left transition-colors",
+                        "flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors sm:flex-row sm:items-center sm:justify-between",
                         on
-                          ? "border-primary/40 bg-secondary/50"
-                          : "border-border bg-card hover:border-primary/25"
+                          ? "bg-[#e8eef8]"
+                          : "bg-card hover:bg-muted/40"
                       )}
                     >
-                      {s.category ? (
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                          {s.category}
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {on ? (
+                            <span className="border border-[#0b3d91] bg-[#0b3d91] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                              Selected
+                            </span>
+                          ) : null}
+                          {s.category ? (
+                            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {s.category}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="text-sm font-semibold text-foreground">
+                          {s.title}
                         </p>
-                      ) : null}
-                      <p className="font-heading text-lg font-semibold">{s.title}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{s.tagline}</p>
-                      {s.official_form ? (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {s.official_form}
+                        <p className="text-xs text-muted-foreground">{s.tagline}</p>
+                      </div>
+                      <div className="shrink-0 text-left text-[11px] text-muted-foreground sm:text-right">
+                        {s.official_form ? <p>{s.official_form}</p> : null}
+                        <p>
+                          Docs: {s.required_docs.join(" · ")} · {s.form_fields.length}{" "}
+                          fields
                         </p>
-                      ) : null}
-                      <p className="mt-3 text-xs text-muted-foreground">
-                        Docs: {s.required_docs.join(" · ")} ·{" "}
-                        {s.form_fields.length} fields
-                      </p>
+                      </div>
                     </button>
                   );
                 })}
@@ -533,7 +731,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             </div>
           ))}
           <div className="flex justify-end">
-            <Button disabled={!service} onClick={() => setStep(1)}>
+            <Button disabled={!service} onClick={() => setStep(1)} className="rounded-sm">
               Next — Application form
               <ArrowRight data-icon="inline-end" />
             </Button>
@@ -543,19 +741,19 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
       {step === 1 && service && (
         <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
-          <Card className="border-border shadow-none">
-            <CardHeader className="gap-2 border-b border-border bg-muted/30">
-              <CardTitle className="text-center font-heading text-xl uppercase tracking-wide">
+          <Card className="border-border shadow-none rounded-sm">
+            <CardHeader className="gap-1 border-b border-border bg-[#0b3d91] text-white">
+              <CardTitle className="text-center text-base font-semibold uppercase tracking-wide text-white">
                 {service.title}
               </CardTitle>
-              <p className="text-center text-xs text-muted-foreground">
+              <p className="text-center text-xs text-white/80">
                 {service.official_form || service.portal.name}
                 {service.fill_mode
                   ? ` · ${fillModeLabel(service.fill_mode)}`
                   : ""}
               </p>
               {formOcrNote ? (
-                <p className="text-center text-xs text-primary">{formOcrNote}</p>
+                <p className="text-center text-xs text-amber-200">{formOcrNote}</p>
               ) : null}
             </CardHeader>
             <CardContent className="flex flex-col gap-5 pt-6">
@@ -630,7 +828,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               ))}
 
               {formComplete ? (
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/20 p-3 text-sm">
+                <label className="flex cursor-pointer items-start gap-3 border border-border bg-muted/20 p-3 text-sm">
                   <input
                     type="checkbox"
                     className="mt-1"
@@ -749,7 +947,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 ) : null}
               </p>
 
-              <div className="flex flex-col gap-3 rounded-xl border border-dashed border-primary/30 bg-secondary/20 p-4">
+              <div className="flex flex-col gap-3 border border-dashed border-[#0b3d91]/35 bg-[#e8eef8]/60 p-4">
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div className="flex flex-col gap-1">
                     <Label htmlFor="docs">
@@ -799,7 +997,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 {uploads.map((u, i) => (
                   <div
                     key={`${u.file.name}-${u.file.size}-${i}`}
-                    className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-3"
+                    className="flex flex-wrap items-center gap-2 border border-border bg-card p-3"
                   >
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">
                       {i + 1}. {u.file.name}
@@ -923,7 +1121,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     {doc.handwritten ? " · HW" : ""}
                   </Button>
                 ))}
-                <Badge variant="outline" className="rounded-full">
+                <Badge variant="outline" className="rounded-sm">
                   {uncertainCount} UNCERTAIN field(s)
                 </Badge>
               </div>
@@ -944,6 +1142,15 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                       {FIELD_KEYS.map((key) => {
                         const val = activeDoc.fields[key] || "";
                         const bad = isUncertain(val);
+                        const elsewhere = extractions
+                          .filter((d) => d !== activeDoc)
+                          .map((d) => {
+                            const v = d.fields[key] || "";
+                            return !isUncertain(v)
+                              ? `${d.doc_type}: ${v}`
+                              : null;
+                          })
+                          .filter(Boolean) as string[];
                         return (
                           <div key={key} className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between gap-2">
@@ -951,7 +1158,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                               {bad ? (
                                 <Badge
                                   variant="outline"
-                                  className="rounded-full border-status-uncertain/40 text-status-uncertain"
+                                  className="rounded-sm border-status-uncertain/40 text-status-uncertain"
                                 >
                                   Needs check
                                 </Badge>
@@ -965,6 +1172,38 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                                 updateField(reviewIdx, key, e.target.value)
                               }
                             />
+                            {!bad ? (
+                              (() => {
+                                const snip = ocrSnippet(activeDoc.ocr_text, val);
+                                return snip ? (
+                                  <p className="rounded-md border border-border/60 bg-muted/40 px-2 py-1 font-mono text-[10px] leading-snug text-muted-foreground">
+                                    <span className="font-sans font-medium text-foreground">
+                                      Provenance ·{" "}
+                                    </span>
+                                    {snip}
+                                  </p>
+                                ) : (
+                                  <p className="text-[11px] text-muted-foreground">
+                                    Source: {activeDoc.doc_type}
+                                    {activeDoc.source_file
+                                      ? ` · ${activeDoc.source_file}`
+                                      : ""}
+                                  </p>
+                                );
+                              })()
+                            ) : null}
+                            {bad && elsewhere.length > 0 ? (
+                              <p className="text-[11px] text-muted-foreground">
+                                Not on this {activeDoc.doc_type}. Available on{" "}
+                                {elsewhere.join(" · ")}. Verification will use the
+                                best readable source (Aadhaar → PAN → …).
+                              </p>
+                            ) : bad ? (
+                              <p className="text-[11px] text-muted-foreground">
+                                Not printed / unreadable on this document — OK if
+                                another ID has it.
+                              </p>
+                            ) : null}
                           </div>
                         );
                       })}
@@ -1007,7 +1246,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     Re-upload
                   </Button>
                   <Button variant="secondary" onClick={fillFormFromDocs}>
-                    Fill form from OCR
+                    Fill form from best OCR
                   </Button>
                   <Button
                     variant={reviewed ? "secondary" : "default"}
@@ -1051,36 +1290,89 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
       {step === 4 && result && (
         <div className="flex flex-col gap-4">
-          <div className="grid gap-3 sm:grid-cols-4">
-            {(
-              [
-                ["match", "Matches", result.cross_document.summary.matches],
-                ["variant", "Variants", result.cross_document.summary.variants],
-                ["blocker", "Blockers", result.cross_document.summary.blockers],
-                ["uncertain", "Uncertain", result.cross_document.summary.uncertain],
-              ] as const
-            ).map(([status, label, value]) => (
-              <div
-                key={status}
-                className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3"
-              >
-                <div>
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <p className="font-heading text-2xl font-semibold">{value}</p>
+          {impact ? (
+            <div
+              className={cn(
+                "desk-notice",
+                impact.ready
+                  ? "border-l-status-match bg-status-match/5"
+                  : "border-l-status-blocker bg-status-blocker/5"
+              )}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  {impact.ready ? (
+                    <ShieldCheck className="mt-0.5 size-5 shrink-0 text-status-match" />
+                  ) : (
+                    <ShieldAlert className="mt-0.5 size-5 shrink-0 text-status-blocker" />
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {impact.ready
+                        ? "Desk cleared — safe for portal pack"
+                        : `${impact.caught} portal rejection risk(s) caught at the desk`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      ~{impact.minutesSaved} min saved vs discovering this at{" "}
+                      {result.service.portal.name}. Score {impact.score} ·{" "}
+                      {impact.grade}
+                      {judgeMode ? " · Judge demo fixtures" : ""}.
+                    </p>
+                  </div>
                 </div>
-                <StatusBadge status={status} />
+                <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide">
+                  <span className="border border-border bg-card px-2 py-1">
+                    {impact.caught} blockers caught
+                  </span>
+                  <span className="inline-flex items-center gap-1 border border-border bg-card px-2 py-1">
+                    <Clock className="size-3" />~{impact.minutesSaved} min
+                  </span>
+                </div>
               </div>
-            ))}
+            </div>
+          ) : null}
+
+          <div className="desk-panel overflow-hidden">
+            <div className="desk-panel-head">Verification summary</div>
+            <div className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4 sm:divide-y-0">
+              {(
+                [
+                  ["match", "Matches", result.cross_document.summary.matches],
+                  ["variant", "Variants", result.cross_document.summary.variants],
+                  ["blocker", "Blockers", result.cross_document.summary.blockers],
+                  [
+                    "uncertain",
+                    "Uncertain",
+                    result.cross_document.summary.uncertain,
+                  ],
+                ] as const
+              ).map(([status, label, value]) => (
+                <div
+                  key={status}
+                  className="flex items-center justify-between bg-card px-4 py-3"
+                >
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {label}
+                    </p>
+                    <p className="text-2xl font-semibold tabular-nums text-foreground">
+                      {value}
+                    </p>
+                  </div>
+                  <StatusBadge status={status} />
+                </div>
+              ))}
+            </div>
           </div>
 
-          <Card className="border-border shadow-none">
-            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-              <CardTitle className="font-heading text-lg">Knowledge score</CardTitle>
-              <Badge className="rounded-full">
+          <div className="desk-panel overflow-hidden">
+            <div className="desk-panel-head">
+              <span>Knowledge score</span>
+              <span className="border border-[#0b3d91]/25 bg-white px-2 py-0.5 text-xs font-semibold text-[#0b3d91]">
                 {Math.round(result.knowledge.score)} · {result.knowledge.grade}
-              </Badge>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
+              </span>
+            </div>
+            <div className="flex flex-col gap-3 bg-card p-4 text-sm text-muted-foreground">
               <p>{result.knowledge.process_summary}</p>
               {result.knowledge.checklist?.length ? (
                 <div>
@@ -1109,51 +1401,82 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     [{i.severity}] {i.message}
                   </p>
                 ))}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card className="border-border shadow-none">
-            <CardHeader>
-              <CardTitle className="font-heading text-lg">Form ↔ document</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              {result.form_verification.checks.map((c) => (
-                <div
-                  key={c.form_key}
-                  className="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:justify-between"
-                >
-                  <div>
-                    <p className="text-sm font-medium">{c.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Form: “{c.form_value}” · {c.doc_type || "—"}: “{c.doc_value || "—"}”
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">{c.detail}</p>
+          <div className="desk-panel overflow-hidden">
+            <div className="desk-panel-head">
+              <span>Form ↔ best-source document</span>
+            </div>
+            <p className="border-b border-border bg-[#fafbfd] px-4 py-2 text-xs text-muted-foreground">
+              Each field is checked against the highest-priority readable ID
+              (Aadhaar → PAN → DL → …). Docs missing the field are ignored — not
+              blockers.
+            </p>
+            <div className="divide-y divide-border bg-card">
+              {result.form_verification.checks.map((c) => {
+                const sourceDoc = extractions.find((d) => d.doc_type === c.doc_type);
+                const snip = ocrSnippet(
+                  sourceDoc?.ocr_text,
+                  c.doc_value || undefined
+                );
+                return (
+                  <div
+                    key={c.form_key}
+                    className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:justify-between"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">{c.label}</p>
+                        {c.doc_type ? (
+                          <span className="border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Best source: {c.doc_type}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Form: “{c.form_value}” · {c.doc_type || "—"}: “
+                        {c.doc_value || "—"}”
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">{c.detail}</p>
+                      {snip ? (
+                        <p className="mt-1 border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] leading-snug text-muted-foreground">
+                          <span className="font-sans font-medium text-foreground">
+                            Provenance ·{" "}
+                          </span>
+                          {snip}
+                        </p>
+                      ) : null}
+                      {c.other_sources && c.other_sources.length > 0 ? (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Also readable on: {c.other_sources.join(" · ")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <StatusBadge status={mapStatus(c.status)} />
                   </div>
-                  <StatusBadge status={mapStatus(c.status)} />
-                </div>
-              ))}
+                );
+              })}
               {Object.keys(result.form_verification.approved_fields).length > 0 ? (
-                <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+                <div className="bg-[#fafbfd] px-4 py-3 text-xs text-muted-foreground">
                   FORM-ONLY (no KYC source):{" "}
                   {Object.entries(result.form_verification.approved_fields)
                     .map(([k, v]) => `${k}=${v}`)
                     .join(" · ")}
                 </div>
               ) : null}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card className="border-border shadow-none">
-            <CardHeader>
-              <CardTitle className="font-heading text-lg">Cross-document</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2">
+          <div className="desk-panel overflow-hidden">
+            <div className="desk-panel-head">Cross-document</div>
+            <div className="divide-y divide-border bg-card">
               {result.cross_document.comparisons
                 .filter((c) => c.status !== "MATCH")
                 .map((c, i) => (
                   <div
                     key={`${c.field}-${i}`}
-                    className="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:justify-between"
+                    className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:justify-between"
                   >
                     <div>
                       <p className="text-sm font-medium">
@@ -1166,31 +1489,37 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     <StatusBadge status={mapStatus(c.status)} />
                   </div>
                 ))}
-            </CardContent>
-          </Card>
+              {result.cross_document.comparisons.filter((c) => c.status !== "MATCH")
+                .length === 0 ? (
+                <p className="px-4 py-3 text-sm text-muted-foreground">
+                  No non-match comparisons.
+                </p>
+              ) : null}
+            </div>
+          </div>
 
           {result.remediation && (
-            <Card className="border-primary/25 bg-secondary/40 shadow-none">
-              <CardHeader>
-                <CardTitle className="font-heading text-lg">Priority remediation</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2 text-sm">
-                <p>
-                  {result.remediation.primary_doc
-                    ? `Fix first: ${result.remediation.primary_doc}`
-                    : "No critical blockers"}
-                </p>
-                <p className="text-muted-foreground">{result.remediation.how}</p>
-              </CardContent>
-            </Card>
+            <div className="desk-notice">
+              <p className="text-sm font-semibold text-[#0b3d91]">
+                Priority remediation
+              </p>
+              <p className="mt-1 text-sm">
+                {result.remediation.primary_doc
+                  ? `Fix first: ${result.remediation.primary_doc}`
+                  : "No critical blockers"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {result.remediation.how}
+              </p>
+            </div>
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setStep(3)}>
+            <Button variant="outline" onClick={() => setStep(3)} className="rounded-sm">
               <ArrowLeft data-icon="inline-start" />
               Back to review
             </Button>
-            <Button onClick={() => setStep(5)}>
+            <Button onClick={() => setStep(5)} className="rounded-sm">
               Portal pack
               <ArrowRight data-icon="inline-end" />
             </Button>
@@ -1198,81 +1527,191 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         </div>
       )}
 
-      {step === 5 && result && (
+      {step === 5 && result && impact && (
         <div className="flex flex-col gap-4">
-          <Card className="border-border shadow-none">
-            <CardHeader>
-              <CardTitle className="font-heading text-lg">Portal pack</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="notes">Operator notes</Label>
-                <Textarea
-                  id="notes"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                />
+          <div className="desk-panel overflow-hidden">
+            <div
+              className={cn(
+                "desk-panel-head",
+                impact.ready ? "bg-[#e8f5e9] text-[#14532d]" : "bg-[#fff8e6] text-[#854d0e]"
+              )}
+            >
+              <span className="inline-flex items-center gap-2">
+                {impact.ready ? (
+                  <CheckCircle2 className="size-4" />
+                ) : (
+                  <ShieldAlert className="size-4" />
+                )}
+                {impact.ready ? "Portal pack ready" : "Portal pack with caveats"}
+                {judgeMode ? (
+                  <span className="border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                    Judge demo
+                  </span>
+                ) : null}
+              </span>
+              <span className="border border-current/25 bg-white/80 px-2 py-0.5 text-xs">
+                {impact.score} · {impact.grade}
+              </span>
+            </div>
+            <div className="border-b border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+              {impact.ready
+                ? `Operator-reviewed OCR + form answers are packed for ${result.service.portal.name}. Download both PDFs, then open the portal.`
+                : `Desk caught ${impact.caught} rejection risk(s) before ${result.service.portal.name} upload. Download the audit for the citizen file, or go back and remediate.`}
+            </div>
+            <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+              <div className="bg-card px-4 py-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Blockers caught
+                </p>
+                <p className="text-2xl font-semibold tabular-nums">{impact.caught}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {impact.blockers} cross-doc · {impact.formBlockers} form
+                </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    try {
-                      await downloadPack("form", {
-                        service_id: serviceId,
-                        form_answers: answers,
-                        extractions,
-                        operator_notes: notes,
-                      });
-                      toast.success("Filled form downloaded");
-                    } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "Download failed");
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  <Download data-icon="inline-start" />
-                  Filled form PDF
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    try {
-                      await downloadPack("audit", {
-                        service_id: serviceId,
-                        form_answers: answers,
-                        extractions,
-                        operator_notes: notes,
-                      });
-                      toast.success("Audit file downloaded");
-                    } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "Download failed");
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  <Download data-icon="inline-start" />
-                  Identity audit PDF
-                </Button>
+              <div className="bg-card px-4 py-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Minutes saved
+                </p>
+                <p className="text-2xl font-semibold tabular-nums">
+                  ~{impact.minutesSaved}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  vs portal rejection loop
+                </p>
               </div>
-              <Separator />
-              <p className="text-xs text-muted-foreground">
-                Pack is built from operator-reviewed OCR + form answers.
+              <div className="bg-card px-4 py-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Variants / uncertain
+                </p>
+                <p className="text-2xl font-semibold tabular-nums">
+                  {impact.variants}
+                  <span className="text-base text-muted-foreground">
+                    {" "}
+                    / {impact.uncertain}
+                  </span>
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Operator judgment still needed
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="desk-panel overflow-hidden">
+            <div className="desk-panel-head">Download portal documents</div>
+            <div className="divide-y divide-border bg-card">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await downloadPack("form", {
+                      service_id: serviceId,
+                      form_answers: answers,
+                      extractions,
+                      operator_notes: notes,
+                    });
+                    toast.success("Filled form downloaded");
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Download failed");
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-[#e8eef8] disabled:opacity-50"
+              >
+                <div>
+                  <p className="text-sm font-semibold">Filled form PDF</p>
+                  <p className="text-xs text-muted-foreground">
+                    Block-letter / portal fields from reviewed answers — ready to
+                    upload or print.
+                  </p>
+                </div>
+                <Download className="mt-0.5 size-4 shrink-0 text-[#0b3d91]" />
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await downloadPack("audit", {
+                      service_id: serviceId,
+                      form_answers: answers,
+                      extractions,
+                      operator_notes: notes,
+                    });
+                    toast.success("Audit file downloaded");
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Download failed");
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-[#e8eef8] disabled:opacity-50"
+              >
+                <div>
+                  <p className="text-sm font-semibold">Identity audit PDF</p>
+                  <p className="text-xs text-muted-foreground">
+                    MATCH / VARIANT / CRITICAL / UNCERTAIN trail + best-source
+                    provenance for the desk file.
+                  </p>
+                </div>
+                <Download className="mt-0.5 size-4 shrink-0 text-[#0b3d91]" />
+              </button>
+            </div>
+          </div>
+
+          <div className="desk-panel overflow-hidden">
+            <div className="desk-panel-head">Operator notes</div>
+            <div className="bg-card p-4">
+              <Textarea
+                id="notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                className="rounded-sm"
+              />
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Included in the audit PDF
+                {judgeMode ? " · Sanika judge fixtures" : ""}.
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setStep(4)}>
+            {result.service.portal.url ? (
+              <Button
+                variant="secondary"
+                className="rounded-sm"
+                render={
+                  <a
+                    href={result.service.portal.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  />
+                }
+                nativeButton={false}
+              >
+                Open {result.service.portal.name}
+                <ExternalLink data-icon="inline-end" />
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              onClick={() => setStep(4)}
+              className="rounded-sm"
+            >
               <ArrowLeft data-icon="inline-start" />
-              Back
+              Back to verify
             </Button>
-            <Button variant="ghost" render={<Link href="/app" />} nativeButton={false}>
+            <Button
+              variant="ghost"
+              className="rounded-sm"
+              render={<Link href="/app" />}
+              nativeButton={false}
+            >
               Desk home
             </Button>
           </div>

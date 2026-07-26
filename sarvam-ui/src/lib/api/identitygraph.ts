@@ -57,6 +57,7 @@ export type FormCheck = {
   status: "MATCH" | "VARIANT" | "CRITICAL" | "UNCERTAIN";
   detail: string;
   high_stakes: boolean;
+  other_sources?: string[];
 };
 
 export type Comparison = {
@@ -191,6 +192,16 @@ export function fetchService(id: string) {
 
 export function fetchMeta() {
   return api<Meta>("/meta");
+}
+
+export function fetchDemo(serviceId: string, citizen?: string) {
+  const q = citizen ? `?citizen=${encodeURIComponent(citizen)}` : "";
+  return api<{
+    service_id: string;
+    form_answers: Record<string, string>;
+    extractions: Extraction[];
+    citizen?: string;
+  }>(`/demo/${serviceId}${q}`);
 }
 
 export function verifyCase(body: {

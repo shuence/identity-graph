@@ -2,7 +2,6 @@
 
 import { Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Service } from "@/lib/api/identitygraph";
 
 const FILL_LABEL: Record<string, string> = {
@@ -26,11 +25,9 @@ export function OperatorRail({
   const op = service.operator;
   return (
     <div className="flex flex-col gap-4">
-      <Card className="border-border bg-secondary/30 shadow-none">
-        <CardHeader className="pb-2">
-          <CardTitle className="font-heading text-lg">Operator brief</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
+      <div className="desk-panel overflow-hidden">
+        <div className="desk-panel-head">Operator brief</div>
+        <div className="flex flex-col gap-3 bg-card p-4 text-sm text-muted-foreground">
           {service.fill_mode ? (
             <p>
               <span className="font-medium text-foreground">Mode: </span>
@@ -45,7 +42,7 @@ export function OperatorRail({
           ) : null}
           <p>{service.why}</p>
           {op?.process_summary ? (
-            <p className="rounded-lg border border-border bg-card p-3 text-xs leading-relaxed text-foreground">
+            <p className="border border-border bg-[#fafbfd] p-3 text-xs leading-relaxed text-foreground">
               {op.process_summary}
             </p>
           ) : null}
@@ -54,67 +51,57 @@ export function OperatorRail({
               href={service.source_url}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-primary underline-offset-2 hover:underline"
+              className="text-xs text-[#0b3d91] underline-offset-2 hover:underline"
             >
               Official source
             </a>
           ) : null}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {op?.operator_checklist?.length ? (
-        <Card className="border-border shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="font-heading text-base">Before you submit</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
-              {op.operator_checklist.map((item) => (
-                <li key={item} className="flex gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <div className="desk-panel overflow-hidden">
+          <div className="desk-panel-head">Before you submit</div>
+          <ul className="flex flex-col divide-y divide-border bg-card text-sm text-muted-foreground">
+            {op.operator_checklist.map((item) => (
+              <li key={item} className="flex gap-2 px-4 py-2.5">
+                <span className="mt-1.5 size-1.5 shrink-0 bg-[#0b3d91]" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {op?.rejection_reasons?.length ? (
-        <Card className="border-border shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="font-heading text-base">Common rejections</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
-              {op.rejection_reasons.slice(0, 5).map((item) => (
-                <li key={item} className="flex gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-destructive/80" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <div className="desk-panel overflow-hidden">
+          <div className="desk-panel-head">Common rejection reasons</div>
+          <ul className="flex flex-col divide-y divide-border bg-card text-sm text-muted-foreground">
+            {op.rejection_reasons.slice(0, 6).map((item) => (
+              <li key={item} className="px-4 py-2.5">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {onSpeak && service.form_fields[0] ? (
         <Button
           variant="outline"
+          className="rounded-sm"
           disabled={busy}
           onClick={() => onSpeak(service.form_fields[0].key)}
         >
           <Volume2 data-icon="inline-start" />
-          {speakingField
-            ? `Playing: ${speakingField}`
-            : "Play first-field Hindi prompt"}
+          {speakingField ? "Speaking…" : "Play first field prompt"}
         </Button>
       ) : null}
 
       {service.positioning?.stack ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           {service.positioning.hackathon}
-          <br />
+          {service.positioning.hackathon ? " · " : null}
           {service.positioning.stack}
         </p>
       ) : null}
@@ -122,7 +109,7 @@ export function OperatorRail({
   );
 }
 
-export function fillModeLabel(mode?: string) {
+export function fillModeLabel(mode?: string | null) {
   if (!mode) return "";
   return FILL_LABEL[mode] || mode.replaceAll("_", " ");
 }

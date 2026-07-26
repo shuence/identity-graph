@@ -1,8 +1,8 @@
 """Compare form answers against extracted document fields.
 
-Prefers Aadhaar (then PAN, then other IDs) and skips blank/UNCERTAIN document
-values when a better readable document exists — so a blank passbook does not
-hide a good Aadhaar match.
+For each form field, pick ONE source of truth among uploaded docs that actually
+have a readable value (Aadhaar → PAN → DL → … → Bank). A blank passbook DOB
+never blocks a good Aadhaar/PAN match.
 """
 
 from __future__ import annotations
@@ -23,6 +23,15 @@ _DOC_PRIORITY = {
     "Bank Passbook": 7,
 }
 
+# Fields that commonly appear on each doc type (used for UI / fill hints).
+_FIELD_LIKELY_ON = {
+    "full_name": ("Aadhaar Card", "PAN Card", "Driving License", "Bank Passbook", "Voter ID"),
+    "father_name": ("Aadhaar Card", "PAN Card", "Driving License"),
+    "dob": ("Aadhaar Card", "PAN Card", "Driving License"),
+    "address": ("Aadhaar Card", "Driving License", "Bank Passbook", "Ration Card"),
+    "id_number": ("Aadhaar Card", "PAN Card", "Driving License", "Bank Passbook", "Voter ID"),
+}
+
 
 @dataclass
 class FormDocCheck:
@@ -34,13 +43,15 @@ class FormDocCheck:
     status: str
     detail: str
     high_stakes: bool = True
+    # Other docs that had this field (readable) — for operator transparency.
+    other_sources: list[str] = field(default_factory=list)
 
 
 @dataclass
 class FormVerification:
     checks: list[FormDocCheck] = field(default_factory=list)
     approved_fields: dict[str, str] = field(default_factory=dict)
-    # Every form-field × document comparison (for the UI matrix).
+    # Readable sources only (skips UNCERTAIN docs) — for the UI matrix.
     all_checks: list[FormDocCheck] = field(default_factory=list)
 
     @property
@@ -56,12 +67,33 @@ class FormVerification:
         return not self.blockers and not self.uncertain
 
 
+def best_readable_value(
+    extractions: list[dict],
+    field_key: str,
+    prefer_doc: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Return (doc_type, value) for the highest-priority doc with a readable field."""
+    readable: list[tuple[int, str, str]] = []
+    for e in extractions:
+        val = (e.get("fields") or {}).get(field_key, "UNCERTAIN")
+        if is_uncertain(val):
+            continue
+        prio = _DOC_PRIORITY.get(e.get("doc_type", ""), 50)
+        if prefer_doc and e.get("doc_type") == prefer_doc:
+            prio = -1
+        readable.append((prio, e["doc_type"], str(val).strip()))
+    if not readable:
+        return None, None
+    readable.sort(key=lambda t: t[0])
+    _, doc_type, value = readable[0]
+    return doc_type, value
+
+
 def verify_form_against_docs(
     form_answers: dict[str, str],
     form_fields: list[dict],
     extractions: list[dict],
 ) -> FormVerification:
-    by_type = {e["doc_type"]: e for e in extractions}
     result = FormVerification()
 
     for spec in form_fields:
@@ -76,28 +108,30 @@ def verify_form_against_docs(
             continue
 
         prefer_doc = spec.get("compare_doc")
-        if prefer_doc and prefer_doc in by_type:
-            candidates = [by_type[prefer_doc]] + [e for e in extractions if e["doc_type"] != prefer_doc]
-        else:
-            # Prefer identity docs over passbook when the field is identity-like.
-            candidates = sorted(
-                extractions,
-                key=lambda e: _DOC_PRIORITY.get(e["doc_type"], 50),
-            )
 
-        per_doc: list[FormDocCheck] = []
-        for rec in candidates:
+        # Only compare against documents that actually yielded this field.
+        readable_checks: list[FormDocCheck] = []
+        skipped_uncertain: list[str] = []
+
+        ordered = sorted(
+            extractions,
+            key=lambda e: (
+                0 if prefer_doc and e.get("doc_type") == prefer_doc else 1,
+                _DOC_PRIORITY.get(e.get("doc_type", ""), 50),
+            ),
+        )
+
+        for rec in ordered:
             doc_val = rec["fields"].get(compare_to, "UNCERTAIN")
+            if is_uncertain(doc_val):
+                skipped_uncertain.append(rec["doc_type"])
+                continue
+
             if is_uncertain(form_val):
                 status, detail = UNCERTAIN, "Form field is empty — citizen must answer"
-            elif is_uncertain(doc_val):
-                status, detail = (
-                    UNCERTAIN,
-                    f"{rec['doc_type']} did not yield a readable '{compare_to}' "
-                    f"(OCR/extraction returned UNCERTAIN)",
-                )
             else:
                 status, detail = compare_field(compare_to, form_val, doc_val)
+
             check = FormDocCheck(
                 form_key=key,
                 label=spec["label"],
@@ -108,18 +142,53 @@ def verify_form_against_docs(
                 detail=detail,
                 high_stakes=high_stakes,
             )
-            per_doc.append(check)
+            readable_checks.append(check)
             result.all_checks.append(check)
 
-        best = _pick_best(per_doc, prefer_doc)
+        best = _pick_best(readable_checks, prefer_doc)
+
         if best is None:
+            # No uploaded doc has this field readable.
+            likely = _FIELD_LIKELY_ON.get(compare_to, ())
+            hint = (
+                f"None of the uploaded documents have a readable '{compare_to}'. "
+                f"Skipped (field absent): {', '.join(skipped_uncertain) or '—'}. "
+            )
+            if likely:
+                hint += f"Usually found on: {', '.join(likely)}."
             best = FormDocCheck(
-                form_key=key, label=spec["label"], form_value=form_val or "—",
-                doc_type=None, doc_value=None, status=UNCERTAIN,
-                detail="No supporting document available to verify this field — "
-                       "Aadhaar/PAN may have failed to digitize",
+                form_key=key,
+                label=spec["label"],
+                form_value=form_val or "—",
+                doc_type=None,
+                doc_value=None,
+                status=UNCERTAIN,
+                detail=hint,
                 high_stakes=high_stakes,
             )
+        else:
+            others = [
+                f"{c.doc_type}: {c.doc_value}"
+                for c in readable_checks
+                if c.doc_type != best.doc_type
+            ]
+            best.other_sources = others
+            skip_note = ""
+            if skipped_uncertain:
+                skip_note = (
+                    f" Ignored {', '.join(skipped_uncertain)} "
+                    f"(no readable {compare_to} on those docs)."
+                )
+            if best.status in (MATCH, VARIANT):
+                best.detail = (
+                    f"Checked against {best.doc_type} as source of truth. "
+                    f"{best.detail}{skip_note}"
+                )
+            elif best.status == CRITICAL:
+                best.detail = (
+                    f"Mismatch vs {best.doc_type} (preferred readable source). "
+                    f"{best.detail}{skip_note}"
+                )
 
         result.checks.append(best)
         if best.status in (MATCH, VARIANT) and form_val:
@@ -141,12 +210,12 @@ def _pick_best(checks: list[FormDocCheck], prefer_doc: str | None) -> FormDocChe
     if readable:
         readable.sort(key=lambda c: _DOC_PRIORITY.get(c.doc_type or "", 50))
         return readable[0]
-    # 3) Prefer CRITICAL on preferred doc (real mismatch beats "couldn't read passbook").
+    # 3) Prefer CRITICAL on preferred / highest-priority doc (real mismatch).
     critical = [c for c in checks if c.status == CRITICAL]
     if critical:
         critical.sort(key=lambda c: _DOC_PRIORITY.get(c.doc_type or "", 50))
         return critical[0]
-    # 4) UNCERTAIN — prefer preferred doc, else highest-priority doc.
+    # 4) Remaining (UNCERTAIN form empty, etc.)
     checks_sorted = sorted(
         checks,
         key=lambda c: (

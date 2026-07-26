@@ -288,9 +288,10 @@ class ReconciliationResult:
 
 
 def reconcile(extractions: list[dict]) -> ReconciliationResult:
-    """Compare every field across every pair of documents.
+    """Compare every field across every pair of documents that both have a readable value.
 
-    Each extraction record: {"doc_type": str, "fields": {field_key: value, ...}, ...}
+    Missing fields (e.g. DOB absent on Bank Passbook) are skipped — they are not
+    blockers. Only real disagreements between readable values are reported.
     """
     result = ReconciliationResult()
     for rec_a, rec_b in itertools.combinations(extractions, 2):
@@ -300,6 +301,9 @@ def reconcile(extractions: list[dict]) -> ReconciliationResult:
                 continue
             va = rec_a["fields"].get(field_key, "UNCERTAIN")
             vb = rec_b["fields"].get(field_key, "UNCERTAIN")
+            # Skip absent/unreadable sides — Bank without DOB must not spam UNCERTAIN.
+            if is_uncertain(va) or is_uncertain(vb):
+                continue
             status, detail = compare_field(field_key, va, vb)
             result.comparisons.append(Comparison(
                 field=field_key, doc_a=rec_a["doc_type"], doc_b=rec_b["doc_type"],
