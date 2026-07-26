@@ -30,7 +30,7 @@ export function Pillars() {
             Built for citizens, usable by officers
           </h2>
           <Button render={<Link href="/app" />} nativeButton={false}>
-            Open workspace
+            Open Suvidha Desk
           </Button>
         </div>
         <div className="grid gap-4 md:grid-cols-3">

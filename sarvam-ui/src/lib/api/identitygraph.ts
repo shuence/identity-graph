@@ -23,6 +23,7 @@ export type Extraction = {
   doc_type: string;
   source_file?: string;
   language?: string;
+  handwritten?: boolean;
   ocr_text?: string;
   fields: Record<string, string>;
 };
@@ -113,14 +114,6 @@ export function fetchService(id: string) {
   return api<Service>(`/services/${id}`);
 }
 
-export function fetchDemo(serviceId: string) {
-  return api<{
-    service_id: string;
-    form_answers: Record<string, string>;
-    extractions: Extraction[];
-  }>(`/demo/${serviceId}`);
-}
-
 export function verifyCase(body: {
   service_id: string;
   form_answers: Record<string, string>;
@@ -131,6 +124,63 @@ export function verifyCase(body: {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export async function fetchHealth() {
+  return api<{
+    ok: boolean;
+    mode?: string;
+    sarvam_key_loaded?: boolean;
+    engine?: string;
+  }>("/health");
+}
+
+export async function extractDocuments(input: {
+  files: File[];
+  docTypes: string[];
+  handwritten?: boolean[];
+  language?: string;
+}) {
+  const form = new FormData();
+  input.files.forEach((f) => form.append("files", f));
+  form.append("doc_types", JSON.stringify(input.docTypes));
+  form.append(
+    "handwritten",
+    JSON.stringify(input.handwritten ?? input.files.map(() => false))
+  );
+  form.append("language", input.language || "en-IN");
+  const res = await fetch(`${BASE}/extract`, { method: "POST", body: form });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Extract failed (${res.status})`);
+  }
+  return res.json() as Promise<{
+    extractions: Extraction[];
+    failures: { file?: string; doc_type?: string; error: string }[];
+    engine?: string;
+  }>;
+}
+
+export async function speakPrompt(text: string, language = "hi-IN") {
+  const res = await fetch(`${BASE}/voice/speak`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, language }),
+  });
+  if (!res.ok) throw new Error(`TTS failed (${res.status})`);
+  return res.blob();
+}
+
+export async function transcribeAudio(file: Blob, mode = "codemix") {
+  const form = new FormData();
+  form.append("file", file, "answer.webm");
+  form.append("mode", mode);
+  const res = await fetch(`${BASE}/voice/transcribe`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`STT failed (${res.status})`);
+  return res.json() as Promise<{ transcript: string; language_code?: string }>;
 }
 
 export async function downloadPack(

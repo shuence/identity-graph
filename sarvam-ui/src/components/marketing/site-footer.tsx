@@ -5,13 +5,13 @@ const columns = [
     title: "Product",
     links: [
       { label: "Suvidha Desk", href: "/app" },
-      { label: "Link mobile demo", href: "/app" },
+      { label: "Link mobile ↔ Aadhaar", href: "/app?service=link_mobile_aadhaar" },
     ],
   },
   {
     title: "Artifacts",
     links: [
-      { label: "Verification flags", href: "/app" },
+      { label: "Live OCR review", href: "/app" },
       { label: "Filled form PDF", href: "/app" },
       { label: "Identity audit PDF", href: "/app" },
     ],
@@ -40,12 +40,12 @@ export function SiteFooter() {
             </p>
           </div>
           <div className="rounded-xl border border-border bg-secondary/50 px-5 py-4">
-            <p className="text-sm font-medium">Live demo case ready</p>
+            <p className="text-sm font-medium">Live OCR + handwritten review</p>
             <Link
               href="/app"
               className="mt-1 inline-block text-sm text-primary hover:underline"
             >
-              Open Mohammed Irfan Shaikh demo
+              Open Suvidha Desk
             </Link>
           </div>
         </div>

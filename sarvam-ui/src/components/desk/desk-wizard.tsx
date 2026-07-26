@@ -7,7 +7,8 @@ import {
   ArrowRight,
   Download,
   Loader2,
-  Sparkles,
+  ScanSearch,
+  Volume2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shell/page-header";
@@ -21,9 +22,12 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/identity/status-badge";
 import {
   downloadPack,
-  fetchDemo,
+  extractDocuments,
+  fetchHealth,
   fetchService,
+  fetchServices,
   mapStatus,
+  speakPrompt,
   type Extraction,
   type Service,
   type VerifyResult,
@@ -32,12 +36,31 @@ import {
 import { cn } from "@/lib/utils";
 
 const STEPS = [
-  "Choose service",
-  "Fill form",
-  "Documents",
+  "Service",
+  "Form",
+  "OCR upload",
+  "Review fields",
   "Verification",
   "Portal pack",
 ] as const;
+
+const FIELD_KEYS = [
+  "full_name",
+  "father_name",
+  "dob",
+  "address",
+  "id_number",
+] as const;
+
+type UploadRow = {
+  file: File;
+  docType: string;
+  handwritten: boolean;
+};
+
+function isUncertain(v: string | undefined) {
+  return !v || v.trim().toUpperCase() === "UNCERTAIN";
+}
 
 export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) {
   const [step, setStep] = useState(0);
@@ -52,24 +75,31 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [apiLive, setApiLive] = useState(false);
+  const [uploads, setUploads] = useState<UploadRow[]>([]);
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const [reviewed, setReviewed] = useState(false);
 
   const loadServices = useCallback(async () => {
     setBusy(true);
     setBootError(null);
     try {
-      const res = await fetch("/api/backend/services");
-      if (!res.ok) throw new Error("Backend not reachable");
-      const data = (await res.json()) as Service[];
+      const health = await fetchHealth();
+      if (!health.sarvam_key_loaded) {
+        throw new Error(
+          "Sarvam API key not loaded. Add API_KEY to Sarvam_AI/.env and restart ./run_api.sh"
+        );
+      }
+      setApiLive(true);
+      const data = await fetchServices();
       setServices(data);
       const id = initialServiceId || data[0]?.id || "link_mobile_aadhaar";
       setServiceId(id);
-      const detail = await fetchService(id);
-      setService(detail);
+      setService(await fetchService(id));
     } catch (e) {
+      setApiLive(false);
       setBootError(
-        e instanceof Error
-          ? e.message
-          : "Could not reach IdentityGraph API. Start Sarvam_AI on :8000."
+        e instanceof Error ? e.message : "Could not reach Sarvam_AI API on :8001."
       );
     } finally {
       setBusy(false);
@@ -85,6 +115,8 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
     setAnswers({});
     setExtractions([]);
     setResult(null);
+    setUploads([]);
+    setReviewed(false);
     setBusy(true);
     try {
       setService(await fetchService(id));
@@ -95,34 +127,91 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
     }
   }
 
-  async function prefillDemo() {
+  async function runOcr() {
+    if (!apiLive) {
+      toast.error("Sarvam API key required for OCR");
+      return;
+    }
+    if (uploads.length === 0) {
+      toast.error("Upload at least one document scan");
+      return;
+    }
     setBusy(true);
     try {
-      const demo = await fetchDemo(serviceId);
-      setAnswers(demo.form_answers);
-      toast.success("Demo citizen loaded");
+      const out = await extractDocuments({
+        files: uploads.map((u) => u.file),
+        docTypes: uploads.map((u) => u.docType),
+        handwritten: uploads.map((u) => u.handwritten),
+      });
+      setExtractions(out.extractions);
+      setReviewIdx(0);
+      setReviewed(false);
+      setResult(null);
+      if (out.failures?.length) {
+        toast.error(`${out.failures.length} file(s) failed OCR`);
+      }
+      if (out.extractions.length) {
+        toast.success(
+          `OCR complete — ${out.extractions.length} document(s). Review fields next.`
+        );
+        setStep(3);
+      }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Demo load failed");
+      toast.error(e instanceof Error ? e.message : "OCR failed");
     } finally {
       setBusy(false);
     }
   }
 
-  async function loadDemoDocs() {
-    setBusy(true);
-    try {
-      const demo = await fetchDemo(serviceId);
-      setExtractions(demo.extractions);
-      if (!Object.keys(answers).length) setAnswers(demo.form_answers);
-      toast.success(`${demo.extractions.length} demo documents loaded`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Doc load failed");
-    } finally {
-      setBusy(false);
+  function updateField(docIndex: number, key: string, value: string) {
+    setExtractions((prev) =>
+      prev.map((doc, i) =>
+        i === docIndex
+          ? { ...doc, fields: { ...doc.fields, [key]: value } }
+          : doc
+      )
+    );
+    setReviewed(false);
+  }
+
+  function fillFormFromDocs() {
+    if (!service) return;
+    const aadhaar =
+      extractions.find((d) => d.doc_type === "Aadhaar Card") || extractions[0];
+    if (!aadhaar) return;
+    const next = { ...answers };
+    for (const spec of service.form_fields) {
+      const compare = spec.compare_to;
+      if (!compare) continue;
+      const val = aadhaar.fields[compare];
+      if (val && !isUncertain(val)) {
+        if (spec.key === "aadhaar_number" || compare === "id_number") {
+          next[spec.key] = val;
+        } else if (spec.key === compare || spec.compare_doc === aadhaar.doc_type) {
+          next[spec.key] = val;
+        } else if (["full_name", "father_name", "dob", "address"].includes(spec.key)) {
+          next[spec.key] = aadhaar.fields[spec.key] || next[spec.key] || "";
+        }
+      }
     }
+    // Map common keys
+    if (!next.full_name && aadhaar.fields.full_name) next.full_name = aadhaar.fields.full_name;
+    if (!next.father_name && aadhaar.fields.father_name)
+      next.father_name = aadhaar.fields.father_name;
+    if (!next.dob && aadhaar.fields.dob) next.dob = aadhaar.fields.dob;
+    if (!next.address && aadhaar.fields.address) next.address = aadhaar.fields.address;
+    if (!next.aadhaar_number && aadhaar.fields.id_number)
+      next.aadhaar_number = aadhaar.fields.id_number;
+    setAnswers(next);
+    toast.success("Form filled from reviewed OCR — check high-stakes fields");
+    setStep(1);
   }
 
   async function runVerify() {
+    if (!reviewed) {
+      toast.error("Mark OCR fields as reviewed before verification");
+      return;
+    }
     setBusy(true);
     try {
       const v = await verifyCase({
@@ -132,7 +221,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         operator_notes: notes,
       });
       setResult(v);
-      setStep(3);
+      setStep(4);
       toast.success(`Score ${Math.round(v.knowledge.score)} · ${v.knowledge.grade}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Verification failed");
@@ -146,23 +235,39 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
     return service.form_fields.every((f) => (answers[f.key] || "").trim());
   }, [service, answers]);
 
+  const uncertainCount = useMemo(
+    () =>
+      extractions.reduce(
+        (n, doc) =>
+          n +
+          FIELD_KEYS.filter((k) => isUncertain(doc.fields[k])).length,
+        0
+      ),
+    [extractions]
+  );
+
+  const activeDoc = extractions[reviewIdx];
+
   if (bootError) {
     return (
       <>
         <PageHeader
           title="Suvidha Desk"
-          description="Connect the Sarvam_AI backend to run the real IdentityGraph engine."
+          description="Live Sarvam Vision + 30B OCR required — no dummy data."
         />
         <Card className="border-status-blocker/30 bg-status-blocker/5 shadow-none">
           <CardContent className="flex flex-col gap-4 p-6">
             <p className="text-sm text-foreground">{bootError}</p>
             <pre className="overflow-x-auto rounded-lg border border-border bg-card p-3 font-mono text-xs">
               {`cd Sarvam_AI
-source .venv/bin/activate   # or: python3 -m venv .venv && pip install -r requirements.txt
-uvicorn api:app --reload --port 8000`}
+./run_api.sh
+# API_KEY in Sarvam_AI/.env
+# sarvam-ui .env.local → IDENTITYGRAPH_API_URL=http://127.0.0.1:8001`}
             </pre>
             <Button onClick={() => void loadServices()} disabled={busy}>
-              {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              {busy ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : null}
               Retry connection
             </Button>
           </CardContent>
@@ -177,12 +282,15 @@ uvicorn api:app --reload --port 8000`}
         title="IdentityGraph Suvidha Desk"
         description={
           service
-            ? `${service.title} — ${service.tagline}`
-            : "Voice-fill → digitize docs → verify → portal pack"
+            ? `${service.title} — live OCR, handwritten support, operator review`
+            : "Upload → OCR → review → verify → portal pack"
         }
         actions={
-          <Badge variant="secondary" className="rounded-full">
-            Powered by Sarvam_AI
+          <Badge
+            variant="secondary"
+            className="rounded-full border-status-match/40 bg-status-match/10 text-status-match"
+          >
+            Sarvam API live
           </Badge>
         }
       />
@@ -193,7 +301,11 @@ uvicorn api:app --reload --port 8000`}
             key={label}
             type="button"
             onClick={() => {
-              if (i <= step || (i === 3 && result) || (i === 4 && result)) setStep(i);
+              if (i === 0 || i === 1) setStep(i);
+              if (i === 2) setStep(2);
+              if (i === 3 && extractions.length) setStep(3);
+              if (i === 4 && result) setStep(4);
+              if (i === 5 && result) setStep(5);
             }}
             className={cn(
               "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
@@ -233,9 +345,9 @@ uvicorn api:app --reload --port 8000`}
               </button>
             );
           })}
-          <div className="md:col-span-2 flex justify-end">
+          <div className="flex justify-end md:col-span-2">
             <Button disabled={!service} onClick={() => setStep(1)}>
-              Next — Fill form
+              Next — Application form
               <ArrowRight data-icon="inline-end" />
             </Button>
           </div>
@@ -289,16 +401,39 @@ uvicorn api:app --reload --port 8000`}
           <div className="flex flex-col gap-4">
             <Card className="border-border bg-secondary/30 shadow-none">
               <CardHeader>
-                <CardTitle className="font-heading text-lg">Demo assist</CardTitle>
+                <CardTitle className="font-heading text-lg">Operator assist</CardTitle>
               </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <p className="text-sm text-muted-foreground">
-                  Prefills the Mohammed Irfan Shaikh citizen for judging — no API burn.
+              <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
+                <p>
+                  Fill from the citizen, or OCR documents first then{" "}
+                  <strong>Fill form from OCR</strong> on the review step.
                 </p>
-                <Button variant="secondary" disabled={busy} onClick={() => void prefillDemo()}>
-                  <Sparkles data-icon="inline-start" />
-                  Prefill demo citizen
-                </Button>
+                {service.form_fields[0]?.prompt_hi ? (
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        const prompt =
+                          service.form_fields[0].prompt_hi ||
+                          service.form_fields[0].prompt_en ||
+                          "";
+                        const blob = await speakPrompt(prompt, "hi-IN");
+                        const url = URL.createObjectURL(blob);
+                        await new Audio(url).play();
+                        toast.success("Bulbul v3 prompt played");
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "TTS failed");
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    <Volume2 data-icon="inline-start" />
+                    Play first-field prompt
+                  </Button>
+                ) : null}
               </CardContent>
             </Card>
             <div className="flex flex-wrap gap-2">
@@ -306,8 +441,8 @@ uvicorn api:app --reload --port 8000`}
                 <ArrowLeft data-icon="inline-start" />
                 Back
               </Button>
-              <Button disabled={!formComplete} onClick={() => setStep(2)}>
-                Submit → Documents
+              <Button onClick={() => setStep(2)}>
+                {formComplete ? "Next — OCR upload" : "Skip to OCR (fill later)"}
                 <ArrowRight data-icon="inline-end" />
               </Button>
             </div>
@@ -319,47 +454,96 @@ uvicorn api:app --reload --port 8000`}
         <div className="flex flex-col gap-4">
           <Card className="border-border shadow-none">
             <CardHeader>
-              <CardTitle className="font-heading text-lg">Supporting documents</CardTitle>
+              <CardTitle className="font-heading text-lg">
+                Upload documents for OCR
+              </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <p className="text-sm text-muted-foreground">
-                Required: {service.required_docs.join(", ")}. Demo mode loads Sarvam_AI
-                sample extractions (Vision + 30B output shape).
+                Required: {service.required_docs.join(", ")}. Mark{" "}
+                <strong>Handwritten</strong> for filled forms / block letters — uses
+                Indic OCR retries and stricter UNCERTAIN handling.
               </p>
-              <Button disabled={busy} onClick={() => void loadDemoDocs()} className="w-fit">
-                {busy ? (
-                  <Loader2 className="animate-spin" data-icon="inline-start" />
-                ) : (
-                  <Sparkles data-icon="inline-start" />
-                )}
-                Load demo documents
-              </Button>
-              {extractions.length > 0 && (
-                <div className="grid gap-3 md:grid-cols-3">
-                  {extractions.map((doc) => (
-                    <div
-                      key={`${doc.doc_type}-${doc.source_file}`}
-                      className="rounded-xl border border-border bg-card p-4"
+
+              <div className="flex flex-col gap-3 rounded-xl border border-dashed border-primary/30 bg-secondary/20 p-4">
+                <Label htmlFor="docs">Scans (JPG / PNG / PDF)</Label>
+                <Input
+                  id="docs"
+                  type="file"
+                  accept="image/*,.pdf"
+                  multiple
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    const required = service.required_docs;
+                    setUploads(
+                      files.map((file, i) => ({
+                        file,
+                        docType:
+                          required[i] ||
+                          required[required.length - 1] ||
+                          "Other",
+                        handwritten: false,
+                      }))
+                    );
+                    setExtractions([]);
+                    setReviewed(false);
+                  }}
+                />
+
+                {uploads.map((u, i) => (
+                  <div
+                    key={`${u.file.name}-${i}`}
+                    className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-3"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {u.file.name}
+                    </span>
+                    <select
+                      className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                      value={u.docType}
+                      onChange={(e) => {
+                        const next = [...uploads];
+                        next[i] = { ...next[i], docType: e.target.value };
+                        setUploads(next);
+                      }}
                     >
-                      <p className="font-heading font-semibold">{doc.doc_type}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {doc.source_file || "sample"}
-                      </p>
-                      <Separator className="my-3" />
-                      <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
-                        {Object.entries(doc.fields)
-                          .filter(([k]) => k !== "confidence_notes")
-                          .slice(0, 4)
-                          .map(([k, v]) => (
-                            <li key={k}>
-                              <span className="font-medium text-foreground">{k}:</span> {v}
-                            </li>
-                          ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              )}
+                      {[
+                        ...service.required_docs,
+                        ...service.optional_docs,
+                        "Other",
+                      ].map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={u.handwritten}
+                        onChange={(e) => {
+                          const next = [...uploads];
+                          next[i] = { ...next[i], handwritten: e.target.checked };
+                          setUploads(next);
+                        }}
+                      />
+                      Handwritten / filled form
+                    </label>
+                  </div>
+                ))}
+
+                <Button
+                  disabled={busy || uploads.length === 0}
+                  onClick={() => void runOcr()}
+                >
+                  {busy ? (
+                    <Loader2 className="animate-spin" data-icon="inline-start" />
+                  ) : (
+                    <ScanSearch data-icon="inline-start" />
+                  )}
+                  Run Sarvam Vision + 30B OCR
+                </Button>
+              </div>
             </CardContent>
           </Card>
           <div className="flex flex-wrap gap-2">
@@ -368,20 +552,158 @@ uvicorn api:app --reload --port 8000`}
               Back
             </Button>
             <Button
-              disabled={busy || extractions.length < 1}
-              onClick={() => void runVerify()}
+              disabled={!extractions.length}
+              onClick={() => setStep(3)}
+              variant="secondary"
             >
-              {busy ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
-              ) : null}
-              Run verification
+              Review existing OCR
               <ArrowRight data-icon="inline-end" />
             </Button>
           </div>
         </div>
       )}
 
-      {step === 3 && result && (
+      {step === 3 && (
+        <div className="flex flex-col gap-4">
+          {!extractions.length ? (
+            <Card className="border-border shadow-none">
+              <CardContent className="p-6 text-sm text-muted-foreground">
+                No OCR results yet. Upload documents and run Sarvam Vision first.
+                <div className="mt-4">
+                  <Button onClick={() => setStep(2)}>Go to OCR upload</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                {extractions.map((doc, i) => (
+                  <Button
+                    key={`${doc.doc_type}-${i}`}
+                    size="sm"
+                    variant={i === reviewIdx ? "default" : "outline"}
+                    onClick={() => setReviewIdx(i)}
+                  >
+                    {doc.doc_type}
+                    {doc.handwritten ? " · HW" : ""}
+                  </Button>
+                ))}
+                <Badge variant="outline" className="rounded-full">
+                  {uncertainCount} UNCERTAIN field(s)
+                </Badge>
+              </div>
+
+              {activeDoc && (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Card className="border-border shadow-none">
+                    <CardHeader>
+                      <CardTitle className="font-heading text-lg">
+                        Check extracted fields
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        {activeDoc.source_file} · {activeDoc.language}
+                        {activeDoc.handwritten ? " · handwritten" : " · printed"}
+                      </p>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3">
+                      {FIELD_KEYS.map((key) => {
+                        const val = activeDoc.fields[key] || "";
+                        const bad = isUncertain(val);
+                        return (
+                          <div key={key} className="flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <Label htmlFor={`${reviewIdx}-${key}`}>{key}</Label>
+                              {bad ? (
+                                <Badge
+                                  variant="outline"
+                                  className="rounded-full border-status-uncertain/40 text-status-uncertain"
+                                >
+                                  Needs check
+                                </Badge>
+                              ) : null}
+                            </div>
+                            <Input
+                              id={`${reviewIdx}-${key}`}
+                              value={val}
+                              className={cn(bad && "border-status-uncertain")}
+                              onChange={(e) =>
+                                updateField(reviewIdx, key, e.target.value)
+                              }
+                            />
+                          </div>
+                        );
+                      })}
+                      <div className="flex flex-col gap-1.5">
+                        <Label>Operator notes (on this doc)</Label>
+                        <Textarea
+                          value={activeDoc.fields.confidence_notes || ""}
+                          onChange={(e) =>
+                            updateField(reviewIdx, "confidence_notes", e.target.value)
+                          }
+                          rows={2}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border shadow-none">
+                    <CardHeader>
+                      <CardTitle className="font-heading text-lg">
+                        OCR text (source)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
+                        {activeDoc.ocr_text || "(no OCR text returned)"}
+                      </pre>
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Compare the OCR dump with edited fields. Leave UNCERTAIN if the
+                        scan is unreadable — do not invent values.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => setStep(2)}>
+                  <ArrowLeft data-icon="inline-start" />
+                  Re-upload
+                </Button>
+                <Button variant="secondary" onClick={fillFormFromDocs}>
+                  Fill form from OCR
+                </Button>
+                <Button
+                  variant={reviewed ? "secondary" : "default"}
+                  onClick={() => {
+                    setReviewed(true);
+                    toast.success("OCR marked reviewed");
+                  }}
+                >
+                  Mark fields reviewed
+                </Button>
+                <Button
+                  disabled={!reviewed || !formComplete}
+                  onClick={() => void runVerify()}
+                >
+                  {busy ? (
+                    <Loader2 className="animate-spin" data-icon="inline-start" />
+                  ) : null}
+                  Run verification
+                  <ArrowRight data-icon="inline-end" />
+                </Button>
+                {!formComplete ? (
+                  <Button variant="ghost" onClick={() => setStep(1)}>
+                    Complete form first
+                  </Button>
+                ) : null}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {step === 4 && result && (
         <div className="flex flex-col gap-4">
           <div className="grid gap-3 sm:grid-cols-4">
             {(
@@ -408,21 +730,13 @@ uvicorn api:app --reload --port 8000`}
           <Card className="border-border shadow-none">
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
               <CardTitle className="font-heading text-lg">Knowledge score</CardTitle>
-              <Badge
-                className={cn(
-                  "rounded-full",
-                  result.knowledge.grade === "READY" && "bg-status-match text-white",
-                  result.knowledge.grade === "FIX_REQUIRED" &&
-                    "bg-status-uncertain text-foreground",
-                  result.knowledge.grade === "BLOCKED" && "bg-status-blocker text-white"
-                )}
-              >
+              <Badge className="rounded-full">
                 {Math.round(result.knowledge.score)} · {result.knowledge.grade}
               </Badge>
             </CardHeader>
             <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
               <p>{result.knowledge.process_summary}</p>
-              {result.knowledge.rejection_risks.slice(0, 3).map((r) => (
+              {result.knowledge.rejection_risks.slice(0, 4).map((r) => (
                 <p key={r}>• {r}</p>
               ))}
             </CardContent>
@@ -430,13 +744,13 @@ uvicorn api:app --reload --port 8000`}
 
           <Card className="border-border shadow-none">
             <CardHeader>
-              <CardTitle className="font-heading text-lg">Form ↔ document checks</CardTitle>
+              <CardTitle className="font-heading text-lg">Form ↔ document</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {result.form_verification.checks.map((c) => (
                 <div
                   key={c.form_key}
-                  className="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:items-start sm:justify-between"
+                  className="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:justify-between"
                 >
                   <div>
                     <p className="text-sm font-medium">{c.label}</p>
@@ -453,15 +767,15 @@ uvicorn api:app --reload --port 8000`}
 
           <Card className="border-border shadow-none">
             <CardHeader>
-              <CardTitle className="font-heading text-lg">Cross-document findings</CardTitle>
+              <CardTitle className="font-heading text-lg">Cross-document</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {result.cross_document.comparisons
                 .filter((c) => c.status !== "MATCH")
                 .map((c, i) => (
                   <div
-                    key={`${c.field}-${c.doc_a}-${c.doc_b}-${i}`}
-                    className="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:items-start sm:justify-between"
+                    key={`${c.field}-${i}`}
+                    className="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:justify-between"
                   >
                     <div>
                       <p className="text-sm font-medium">
@@ -474,11 +788,6 @@ uvicorn api:app --reload --port 8000`}
                     <StatusBadge status={mapStatus(c.status)} />
                   </div>
                 ))}
-              {!result.cross_document.comparisons.some((c) => c.status !== "MATCH") && (
-                <p className="text-sm text-muted-foreground">
-                  All compared fields match across documents.
-                </p>
-              )}
             </CardContent>
           </Card>
 
@@ -487,43 +796,23 @@ uvicorn api:app --reload --port 8000`}
               <CardHeader>
                 <CardTitle className="font-heading text-lg">Priority remediation</CardTitle>
               </CardHeader>
-              <CardContent className="flex flex-col gap-3 text-sm">
-                {result.remediation.primary_doc ? (
-                  <p>
-                    Fix first:{" "}
-                    <strong>{result.remediation.primary_doc}</strong> (
-                    {result.remediation.blocker_count} blocker
-                    {result.remediation.blocker_count === 1 ? "" : "s"})
-                  </p>
-                ) : (
-                  <p>No critical blockers — operator can proceed after review.</p>
-                )}
+              <CardContent className="flex flex-col gap-2 text-sm">
+                <p>
+                  {result.remediation.primary_doc
+                    ? `Fix first: ${result.remediation.primary_doc}`
+                    : "No critical blockers"}
+                </p>
                 <p className="text-muted-foreground">{result.remediation.how}</p>
-                {result.remediation.portal_url ? (
-                  <Button
-                    className="w-fit"
-                    render={
-                      <a
-                        href={result.remediation.portal_url}
-                        target="_blank"
-                        rel="noreferrer"
-                      />
-                    }
-                    nativeButton={false}
-                  >
-                    Open {result.remediation.portal_name}
-                  </Button>
-                ) : null}
               </CardContent>
             </Card>
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setStep(2)}>
+            <Button variant="outline" onClick={() => setStep(3)}>
               <ArrowLeft data-icon="inline-start" />
-              Back
+              Back to review
             </Button>
-            <Button onClick={() => setStep(4)}>
+            <Button onClick={() => setStep(5)}>
               Portal pack
               <ArrowRight data-icon="inline-end" />
             </Button>
@@ -531,17 +820,13 @@ uvicorn api:app --reload --port 8000`}
         </div>
       )}
 
-      {step === 4 && result && (
+      {step === 5 && result && (
         <div className="flex flex-col gap-4">
           <Card className="border-border shadow-none">
             <CardHeader>
-              <CardTitle className="font-heading text-lg">Result pack</CardTitle>
+              <CardTitle className="font-heading text-lg">Portal pack</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">
-                Download the filled application form and Verified Identity Audit File
-                generated by the Sarvam_AI report engine — ready for the portal upload.
-              </p>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="notes">Operator notes</Label>
                 <Textarea
@@ -549,7 +834,6 @@ uvicorn api:app --reload --port 8000`}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
-                  placeholder="Optional desk notes for the pack…"
                 />
               </div>
               <div className="flex flex-wrap gap-2">
@@ -599,25 +883,16 @@ uvicorn api:app --reload --port 8000`}
                   Identity audit PDF
                 </Button>
               </div>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "w-fit rounded-full",
-                  result.ready_for_portal
-                    ? "border-status-match/40 text-status-match"
-                    : "border-status-uncertain/40 text-status-uncertain"
-                )}
-              >
-                {result.ready_for_portal
-                  ? "Portal-ready after operator sign-off"
-                  : "Fix blockers / uncertain fields before portal"}
-              </Badge>
+              <Separator />
+              <p className="text-xs text-muted-foreground">
+                Pack is built from operator-reviewed OCR + form answers — not sample data.
+              </p>
             </CardContent>
           </Card>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setStep(3)}>
+            <Button variant="outline" onClick={() => setStep(4)}>
               <ArrowLeft data-icon="inline-start" />
-              Back to flags
+              Back
             </Button>
             <Button variant="ghost" render={<Link href="/app" />} nativeButton={false}>
               Desk home

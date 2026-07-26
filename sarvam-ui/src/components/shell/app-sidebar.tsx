@@ -21,7 +21,7 @@ import { Separator } from "@/components/ui/separator";
 const nav = [
   { title: "Suvidha Desk", href: "/app", icon: LayoutDashboard },
   {
-    title: "Link mobile (demo)",
+    title: "Link mobile ↔ Aadhaar",
     href: "/app?service=link_mobile_aadhaar",
     icon: Workflow,
   },

@@ -105,7 +105,7 @@ export function Enterprise() {
             ))}
           </div>
           <Button className="mt-8" render={<Link href="/app" />} nativeButton={false}>
-            Run the demo
+            Open the desk
           </Button>
         </div>
       </section>

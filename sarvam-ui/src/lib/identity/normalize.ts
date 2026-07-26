@@ -14,6 +14,10 @@ const NAME_ALIASES: Record<string, string> = {
   rama: "ram",
   rehman: "rahman",
   rahmaan: "rahman",
+  shaikh: "shaikh",
+  sheikh: "shaikh",
+  shaik: "shaikh",
+  shekh: "shaikh",
 };
 
 /** Collapse whitespace, strip honorifics, lowercase Latin. */

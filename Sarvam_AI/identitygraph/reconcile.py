@@ -15,10 +15,62 @@ import itertools
 import re
 from dataclasses import dataclass, field
 
-import jellyfish
 from dateutil import parser as dateparser
 
 from .config import FIELDS
+
+try:
+    import jellyfish as _jellyfish
+
+    def jaro_winkler_similarity(a: str, b: str) -> float:
+        return _jellyfish.jaro_winkler_similarity(a, b)
+except Exception:  # native wheel blocked / missing — pure-Python fallback
+    def jaro_winkler_similarity(a: str, b: str) -> float:
+        """Compact Jaro-Winkler (good enough for Indic name tokens)."""
+        if a == b:
+            return 1.0
+        if not a or not b:
+            return 0.0
+        la, lb = len(a), len(b)
+        match_dist = max(la, lb) // 2 - 1
+        if match_dist < 0:
+            match_dist = 0
+        a_flags = [False] * la
+        b_flags = [False] * lb
+        matches = 0
+        transpositions = 0
+        for i in range(la):
+            start = max(0, i - match_dist)
+            end = min(i + match_dist + 1, lb)
+            for j in range(start, end):
+                if b_flags[j] or a[i] != b[j]:
+                    continue
+                a_flags[i] = b_flags[j] = True
+                matches += 1
+                break
+        if matches == 0:
+            return 0.0
+        k = 0
+        for i in range(la):
+            if not a_flags[i]:
+                continue
+            while not b_flags[k]:
+                k += 1
+            if a[i] != b[k]:
+                transpositions += 1
+            k += 1
+        jaro = (
+            matches / la
+            + matches / lb
+            + (matches - transpositions / 2) / matches
+        ) / 3
+        prefix = 0
+        for i in range(min(4, la, lb)):
+            if a[i] == b[i]:
+                prefix += 1
+            else:
+                break
+        return jaro + prefix * 0.1 * (1 - jaro)
 
 MATCH = "MATCH"
 VARIANT = "VARIANT"
@@ -119,7 +171,7 @@ def compare_names(a: str, b: str) -> tuple[str, str]:
 
     # Per-token phonetic matching for equal-length names.
     if len(ta) == len(tb):
-        sims = [jellyfish.jaro_winkler_similarity(x, y) for x, y in zip(ta, tb)]
+        sims = [jaro_winkler_similarity(x, y) for x, y in zip(ta, tb)]
         if all(s >= _TOKEN_VARIANT_THRESHOLD for s in sims):
             return VARIANT, "Phonetically equivalent spelling variants"
         weak = [f"'{x}' vs '{y}'" for x, y, s in zip(ta, tb, sims) if s < _TOKEN_VARIANT_THRESHOLD]
@@ -151,7 +203,7 @@ def _is_token_subset(small: list[str], big: list[str]) -> bool:
     for tok in small:
         best, best_sim = None, 0.0
         for r in remaining:
-            sim = jellyfish.jaro_winkler_similarity(tok, r)
+            sim = jaro_winkler_similarity(tok, r)
             if sim > best_sim:
                 best, best_sim = r, sim
         if best_sim < _TOKEN_VARIANT_THRESHOLD:

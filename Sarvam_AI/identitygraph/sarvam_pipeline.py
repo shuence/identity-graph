@@ -80,11 +80,16 @@ Return ONLY a JSON object. No markdown fences. No explanation.
   "dob": "DD/MM/YYYY or UNCERTAIN",
   "address": "string or UNCERTAIN",
   "id_number": "string or UNCERTAIN",
-  "confidence_notes": "short note"
+  "confidence_notes": "short note",
+  "handwriting_quality": "clear | messy | mixed | n/a"
 }
 
 id_number: Aadhaar=12 digits, PAN=ABCDE1234F, Bank=account number, DL=licence number.
 Prefer a noisy readable value over UNCERTAIN when text is present.
+If the scan is handwritten / filled-in form / block letters:
+- Read carefully; do NOT invent neat spellings that are not supported by the OCR.
+- If a character is ambiguous, keep UNCERTAIN for that field.
+- Note messy handwriting in confidence_notes.
 """
 
 
@@ -99,15 +104,31 @@ def _blank_fields(note: str) -> dict:
     }
 
 
-def extract_fields(client: SarvamAI, ocr_text: str, doc_type: str) -> dict:
+def extract_fields(
+    client: SarvamAI,
+    ocr_text: str,
+    doc_type: str,
+    *,
+    handwritten: bool = False,
+) -> dict:
     """Extract fields with Sarvam-30B. Never raises — returns UNCERTAIN dict on failure."""
     hints = {
         "Aadhaar Card": "Aadhaar card. Need full_name, dob, 12-digit id_number, address, father/husband name.",
         "PAN Card": "PAN card. Need full_name, father_name, dob, PAN id_number. Address usually absent.",
         "Bank Passbook": "Bank passbook/statement. Need account holder full_name, address, account id_number.",
+        "Driving License": "Driving licence. Need full_name, dob, DL id_number, address.",
+        "Voter ID": "Voter ID / EPIC. Need full_name, father/husband name, dob or age, address, EPIC id_number.",
+        "Ration Card": "Ration card. Need household head / member full_name, address, ration card id_number.",
+        "School Certificate": "School / board certificate. Need full_name, father_name, dob, certificate id_number.",
     }
     hint = hints.get(doc_type, f"Document type: {doc_type}.")
-    user_msg = f"{hint}\n\nOCR:\n{ocr_text[:10000]}"
+    hw = (
+        "\nSOURCE: HANDWRITTEN / filled form / block letters. "
+        "OCR may be noisy — extract only what is supported; use UNCERTAIN when unsure.\n"
+        if handwritten
+        else "\nSOURCE: Printed document scan.\n"
+    )
+    user_msg = f"{hint}{hw}\nOCR:\n{ocr_text[:10000]}"
 
     raw = ""
     try:
@@ -267,13 +288,24 @@ def _is_uncertain(value: str | None) -> bool:
     return not value or str(value).strip().upper() in ("UNCERTAIN", "N/A", "NA", "")
 
 
-def process_document(client: SarvamAI, file_path: str, doc_type: str,
-                     language: str = "en-IN") -> dict:
+def process_document(
+    client: SarvamAI,
+    file_path: str,
+    doc_type: str,
+    language: str = "en-IN",
+    *,
+    handwritten: bool = False,
+) -> dict:
     """Digitize → extract → regex. Only raises if digitization itself fails."""
     languages_to_try = [language]
-    if doc_type == "Aadhaar Card" and language != "hi-IN":
+    # Handwritten Indic forms often need Hindi OCR first.
+    if handwritten and "hi-IN" not in languages_to_try:
+        languages_to_try.insert(0, "hi-IN")
+    if doc_type == "Aadhaar Card" and "hi-IN" not in languages_to_try:
         languages_to_try.append("hi-IN")
-    elif language != "en-IN":
+    elif language != "en-IN" and "en-IN" not in languages_to_try:
+        languages_to_try.append("en-IN")
+    if "en-IN" not in languages_to_try:
         languages_to_try.append("en-IN")
 
     last_err: Exception | None = None
@@ -283,7 +315,9 @@ def process_document(client: SarvamAI, file_path: str, doc_type: str,
         try:
             ocr_text = digitize_document(client, file_path, language=lang)
             used_lang = lang
-            if len(ocr_text.strip()) >= 20:
+            # Handwritten scans can be shorter; accept thinner OCR.
+            min_len = 12 if handwritten else 20
+            if len(ocr_text.strip()) >= min_len:
                 break
         except Exception as exc:
             last_err = exc
@@ -292,17 +326,20 @@ def process_document(client: SarvamAI, file_path: str, doc_type: str,
     if not ocr_text.strip():
         raise RuntimeError(
             f"Could not digitize {os.path.basename(file_path)} as {doc_type}. "
-            f"Try a clear JPG/PNG photo. Last error: {last_err}"
+            f"Try a clear JPG/PNG photo (handwritten: flat light, no blur). Last error: {last_err}"
         )
 
-    # extract_fields never raises
-    fields = extract_fields(client, ocr_text, doc_type)
+    fields = extract_fields(client, ocr_text, doc_type, handwritten=handwritten)
     fields = regex_fallback_fields(ocr_text, doc_type, fields)
+    if handwritten and "handwrit" not in str(fields.get("confidence_notes", "")).lower():
+        note = fields.get("confidence_notes") or ""
+        fields["confidence_notes"] = f"{note} Handwritten/form source.".strip()
 
     return {
         "doc_type": doc_type,
         "source_file": os.path.basename(file_path),
         "language": used_lang,
+        "handwritten": handwritten,
         "ocr_text": ocr_text,
         "fields": fields,
     }

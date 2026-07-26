@@ -12,7 +12,7 @@ export function AnnouncementBar() {
           href="/app"
           className="underline underline-offset-4 transition-opacity hover:opacity-80"
         >
-          Launch demo
+          Open desk
         </Link>
       </div>
     </div>

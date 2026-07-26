@@ -42,7 +42,7 @@ export function Hero() {
             render={<Link href="/app" />}
             nativeButton={false}
           >
-            Run demo flow
+            Start live OCR
           </Button>
         </div>
       </div>
