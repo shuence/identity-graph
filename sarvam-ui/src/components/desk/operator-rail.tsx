@@ -7,8 +7,8 @@ import type { Service } from "@/lib/api/identitygraph";
 const FILL_LABEL: Record<string, string> = {
   paper_block_letters: "Paper · block letters",
   paper_or_online: "Paper or online",
-  assisted_counter: "CSC / counter assisted",
-  portal_identity: "Portal · identity match",
+  assisted_counter: "CSC assisted",
+  portal_identity: "Portal identity",
 };
 
 export function OperatorRail({
@@ -22,28 +22,24 @@ export function OperatorRail({
   onSpeak?: (fieldKey: string) => void;
   busy?: boolean;
 }) {
-  const op = service.operator;
+  const checklist = (service.operator?.operator_checklist || []).slice(0, 4);
+  const rejections = (service.operator?.rejection_reasons || []).slice(0, 3);
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="desk-panel overflow-hidden">
-        <div className="desk-panel-head">Operator brief</div>
-        <div className="flex flex-col gap-3 bg-card p-4 text-sm text-muted-foreground">
+        <div className="desk-panel-head">Quick brief</div>
+        <div className="flex flex-col gap-2 bg-card p-4 text-sm">
           {service.fill_mode ? (
-            <p>
-              <span className="font-medium text-foreground">Mode: </span>
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">Mode · </span>
               {FILL_LABEL[service.fill_mode] || service.fill_mode}
             </p>
           ) : null}
           {service.official_form ? (
-            <p>
-              <span className="font-medium text-foreground">Form: </span>
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">Form · </span>
               {service.official_form}
-            </p>
-          ) : null}
-          <p>{service.why}</p>
-          {op?.process_summary ? (
-            <p className="border border-border bg-muted/40 p-3 text-xs leading-relaxed text-foreground">
-              {op.process_summary}
             </p>
           ) : null}
           {service.source_url ? (
@@ -59,26 +55,26 @@ export function OperatorRail({
         </div>
       </div>
 
-      {op?.operator_checklist?.length ? (
+      {checklist.length ? (
         <div className="desk-panel overflow-hidden">
-          <div className="desk-panel-head">Before you submit</div>
-          <ul className="flex flex-col divide-y divide-border bg-card text-sm text-muted-foreground">
-            {op.operator_checklist.map((item) => (
+          <div className="desk-panel-head">Checklist</div>
+          <ul className="divide-y divide-border bg-card text-sm text-muted-foreground">
+            {checklist.map((item) => (
               <li key={item} className="flex gap-2 px-4 py-2.5">
                 <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-                <span>{item}</span>
+                <span className="leading-snug">{item}</span>
               </li>
             ))}
           </ul>
         </div>
       ) : null}
 
-      {op?.rejection_reasons?.length ? (
+      {rejections.length ? (
         <div className="desk-panel overflow-hidden">
-          <div className="desk-panel-head">Common rejection reasons</div>
-          <ul className="flex flex-col divide-y divide-border bg-card text-sm text-muted-foreground">
-            {op.rejection_reasons.slice(0, 6).map((item) => (
-              <li key={item} className="px-4 py-2.5">
+          <div className="desk-panel-head">Watch for</div>
+          <ul className="divide-y divide-border bg-card text-sm text-muted-foreground">
+            {rejections.map((item) => (
+              <li key={item} className="px-4 py-2.5 leading-snug">
                 {item}
               </li>
             ))}
@@ -94,16 +90,8 @@ export function OperatorRail({
           onClick={() => onSpeak(service.form_fields[0].key)}
         >
           <Volume2 data-icon="inline-start" />
-          {speakingField ? "Speaking…" : "Play first field prompt"}
+          {speakingField ? "Speaking…" : "Play first prompt"}
         </Button>
-      ) : null}
-
-      {service.positioning?.stack ? (
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
-          {service.positioning.hackathon}
-          {service.positioning.hackathon ? " · " : null}
-          {service.positioning.stack}
-        </p>
       ) : null}
     </div>
   );

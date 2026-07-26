@@ -5,18 +5,18 @@ import { FileScan, Mic, ShieldCheck } from "lucide-react";
 
 const pillars = [
   {
-    title: "Voice for the desk",
-    desc: "Bulbul speaks every field prompt in Hindi; Saaras can capture the citizen's answer. Built for operators who fill forms while the citizen sits beside them.",
+    title: "Voice",
+    desc: "Hindi field prompts while the citizen sits at the counter.",
     icon: Mic,
   },
   {
-    title: "Document intelligence",
-    desc: "Sarvam Vision + 30B OCR on printed IDs and handwritten block-letter forms. Operator reviews UNCERTAIN fields before anything hits the portal.",
+    title: "OCR",
+    desc: "Scan IDs and filled forms. Review unsure fields before submit.",
     icon: FileScan,
   },
   {
-    title: "Mismatch before rejection",
-    desc: "Variant vs blocker classification across Aadhaar, PAN, EPIC, DL, passbook — then a portal-ready pack with the operator checklist from the real form KB.",
+    title: "Verify",
+    desc: "Catch Mohd vs Mohammed before the portal does.",
     icon: ShieldCheck,
   },
 ];
@@ -25,17 +25,17 @@ export function Pillars() {
   return (
     <section id="pillars" className="border-b border-border py-20 md:py-28">
       <div className="mx-auto max-w-7xl px-4 md:px-8">
-        <div className="mb-12 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="flex flex-col gap-3">
+        <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="flex flex-col gap-2">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Sarvam stack · Epoch positioning
+              How it works
             </p>
             <h2 className="max-w-xl font-heading text-3xl font-semibold tracking-tight md:text-4xl">
-              Voice + documents for Bharat&apos;s counters
+              Three steps at the desk
             </h2>
           </div>
           <Button render={<Link href="/app" />} nativeButton={false}>
-            Open Suvidha Desk
+            Open desk
           </Button>
         </div>
         <div className="grid gap-4 md:grid-cols-3">

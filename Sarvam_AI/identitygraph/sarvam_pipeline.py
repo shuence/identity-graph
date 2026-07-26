@@ -596,6 +596,7 @@ def _regex_form_answers(ocr_text: str, form_fields: list[dict]) -> dict[str, str
             "old_address": r"(?:Address\s*currently\s*on\s*DL|Old\s*Address|Address\s*on\s*Current\s*DL)\s*[:\-–]?\s*(.+?)(?:\n|$)",
             "new_address": r"(?:New\s*Address|Current\s*Address(?:\s*\(as\s*on\s*Aadhaar\))?)\s*[:\-–]?\s*(.+?)(?:\n|$)",
             "aadhaar_number": r"(?:Aadhaar(?:\s*Number)?)\s*[:\-–]?\s*([X\d]{4}\s*[X\d]{4}\s*\d{4}|\d{4}\s*\d{4}\s*\d{4})",
+            "pan_number": r"(?:PAN(?:\s*(?:No|Number|Card))?)\s*[:\-–]?\s*([A-Z]{5}[0-9]{4}[A-Z])",
             "reason": r"(?:Reason(?:\s*for\s*Update)?)\s*[:\-–]?\s*(.+?)(?:\n|$)",
         }
         if key in aliases:

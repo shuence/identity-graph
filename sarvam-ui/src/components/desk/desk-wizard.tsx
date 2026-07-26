@@ -8,7 +8,6 @@ import {
   Building2,
   Car,
   CheckCircle2,
-  Clock,
   Download,
   ExternalLink,
   FileScan,
@@ -22,7 +21,6 @@ import {
   Scale,
   ScanSearch,
   ShieldAlert,
-  ShieldCheck,
   Sparkles,
   Trash2,
   Upload,
@@ -39,6 +37,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/identity/status-badge";
+import {
+  ocrDocAccuracy,
+  overallAccuracy,
+  perDocAccuracy,
+} from "@/lib/desk/doc-accuracy";
 import {
   OperatorRail,
   fillModeLabel,
@@ -65,10 +68,10 @@ import { cn } from "@/lib/utils";
 const STEPS = [
   "Service",
   "Form",
-  "OCR upload",
-  "Review fields",
-  "Verification",
-  "Portal pack",
+  "Docs",
+  "Review",
+  "Verify",
+  "Pack",
 ] as const;
 
 /** Explicit MIME + extensions — Safari often greys out .jpg when only `image/*` is set. */
@@ -82,6 +85,30 @@ const FIELD_KEYS = [
   "address",
   "id_number",
 ] as const;
+
+const OCR_FIELD_LABELS: Record<string, string> = {
+  full_name: "Full name",
+  father_name: "Father / guardian",
+  dob: "Date of birth",
+  address: "Address",
+  id_number: "ID number",
+};
+
+function ocrFieldLabel(docType: string, key: string): string {
+  if (key === "id_number") {
+    if (docType === "PAN Card") return "PAN Number";
+    if (docType === "Aadhaar Card") return "Aadhaar Number";
+    if (docType === "Driving License") return "DL Number";
+    if (docType === "Voter ID") return "EPIC Number";
+    if (docType === "Bank Passbook") return "Account Number";
+    if (docType === "Passport") return "Passport Number";
+    if (docType === "Ration Card") return "Ration Card Number";
+  }
+  if (key === "father_name" && docType === "PAN Card") {
+    return "Father's Name (on PAN)";
+  }
+  return OCR_FIELD_LABELS[key] || key;
+}
 
 /** Mirrors DOC_TYPES in Sarvam_AI/identitygraph/config.py */
 const ALL_DOC_TYPES = [
@@ -148,31 +175,6 @@ type UploadRow = {
 
 function isUncertain(v: string | undefined) {
   return !v || v.trim().toUpperCase() === "UNCERTAIN";
-}
-
-/** Find where a value appears in raw OCR text — provenance for the operator. */
-function ocrSnippet(
-  text: string | undefined,
-  value: string | undefined
-): string | null {
-  if (!text || !value || isUncertain(value)) return null;
-  const clean = value.trim();
-  const words = clean.split(/\s+/).filter((w) => w.length > 2);
-  const candidates = [clean, ...words.sort((a, b) => b.length - a.length)].slice(
-    0,
-    4
-  );
-  const lower = text.toLowerCase();
-  for (const cand of candidates) {
-    const idx = lower.indexOf(cand.toLowerCase());
-    if (idx >= 0) {
-      const start = Math.max(0, idx - 45);
-      const end = Math.min(text.length, idx + cand.length + 45);
-      const chunk = text.slice(start, end).replace(/\s+/g, " ").trim();
-      return `${start > 0 ? "…" : ""}${chunk}${end < text.length ? "…" : ""}`;
-    }
-  }
-  return null;
 }
 
 function isLongField(key: string) {
@@ -664,26 +666,18 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               ) : (
                 <Sparkles data-icon="inline-start" />
               )}
-              Judge demo (90s)
+              Judge demo
             </Button>
-            {judgeMode ? (
-              <Badge
-                variant="secondary"
-                className="rounded-lg border-primary/40 bg-primary/10 text-primary"
-              >
-                Judge demo
-              </Badge>
-            ) : null}
             <Badge
               variant="secondary"
               className={cn(
-                "rounded-lg",
+                "rounded-full",
                 apiLive
                   ? "border-status-match/40 bg-status-match/10 text-status-match"
                   : "border-status-uncertain/40 text-status-uncertain"
               )}
             >
-              {apiLive ? "Sarvam OCR live" : "API not connected"}
+              {apiLive ? "Live" : "Offline"}
             </Badge>
           </div>
         }
@@ -920,18 +914,17 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   )}
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <Label htmlFor={field.key} className="flex-1">
+                    <Label
+                      htmlFor={field.key}
+                      className="flex-1"
+                      title={field.operator_tip || undefined}
+                    >
                       {field.label}
                       {field.high_stakes ? " *" : ""}
                     </Label>
                     {field.high_stakes ? (
                       <Badge variant="secondary" className="text-[10px]">
-                        High stakes
-                      </Badge>
-                    ) : null}
-                    {field.compare_doc ? (
-                      <Badge variant="outline" className="text-[10px]">
-                        Match {field.compare_doc}
+                        Critical
                       </Badge>
                     ) : null}
                     <Button
@@ -968,31 +961,18 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                       placeholder={field.prompt_en || ""}
                     />
                   )}
-                  {field.operator_tip ? (
-                    <p className="text-[11px] leading-snug text-muted-foreground">
-                      {field.operator_tip}
-                    </p>
-                  ) : null}
-                  {field.prompt_hi ? (
-                    <p className="text-[11px] text-muted-foreground/80">
-                      हि: {field.prompt_hi}
-                    </p>
-                  ) : null}
                 </div>
               ))}
 
               {formComplete ? (
-                <label className="flex cursor-pointer items-start gap-3 border border-border bg-muted/20 p-3 text-sm">
+                <label className="flex cursor-pointer items-center gap-3 border border-border bg-muted/20 p-3 text-sm">
                   <input
                     type="checkbox"
-                    className="mt-1"
+                    className="size-4"
                     checked={formReviewed}
                     onChange={(e) => setFormReviewed(e.target.checked)}
                   />
-                  <span>
-                    I reviewed the OCR / form answers above. Proceed to
-                    document upload.
-                  </span>
+                  <span>Reviewed — ready for docs</span>
                 </label>
               ) : null}
             </CardContent>
@@ -1008,10 +988,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <p className="text-sm text-muted-foreground">
-                  Upload the citizen&apos;s handwritten / block-letter form
-                  (JPG, JPEG, PNG, WebP, or PDF). OCR fills fields — including
-                  FORM-ONLY values like mobile that eKYC cannot provide. Review
-                  before continuing.
+                  Scan the filled form — OCR fills the fields.
                 </p>
                 <div className="desk-upload">
                   <input
@@ -1050,34 +1027,19 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
               </CardContent>
             </Card>
 
-            <div className="desk-notice flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-[#0b3d91]">
-                  Citizen cannot type? Open full-window voice form
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Sevak asks one field, reads it back, and waits for YES/NO before
-                  saving. When finished, you return here to edit anything wrong.
-                  Same API_KEY in Sarvam_AI/.env for Saaras + Bulbul.
-                </p>
-              </div>
+            <div className="desk-notice flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-foreground">
+                <span className="font-semibold text-primary">Voice · </span>
+                Citizen can&apos;t type? Use full-screen voice form.
+              </p>
               <Button
-                className="shrink-0 rounded-sm"
+                className="shrink-0 rounded-lg"
                 onClick={() => setVoiceFullOpen(true)}
               >
                 <Volume2 data-icon="inline-start" />
-                Open voice form
+                Voice form
               </Button>
             </div>
-
-            {Object.values(answers).some((v) => (v || "").trim()) ? (
-              <div className="border border-status-match/30 bg-status-match/5 px-4 py-3 text-sm">
-                <p className="font-medium text-foreground">
-                  Captured details are in the form below — edit any field if the
-                  voice capture was wrong, then tick the review checkbox.
-                </p>
-              </div>
-            ) : null}
 
             <OperatorRail
               service={service}
@@ -1091,22 +1053,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 Back
               </Button>
               <Button
-                variant="secondary"
-                className="rounded-sm"
-                onClick={() => setVoiceFullOpen(true)}
-              >
-                <Volume2 data-icon="inline-start" />
-                Voice form (full window)
-              </Button>
-              <Button
                 disabled={formComplete && !formReviewed}
                 onClick={() => setStep(2)}
               >
                 {formComplete
                   ? formReviewed
-                    ? "Next — OCR upload"
-                    : "Review form first"
-                  : "Skip to OCR (fill later)"}
+                    ? "Next — docs"
+                    : "Review first"
+                  : "Skip to docs"}
                 <ArrowRight data-icon="inline-end" />
               </Button>
             </div>
@@ -1124,28 +1078,19 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <p className="text-sm text-muted-foreground">
-                Add multiple KYC scans (Aadhaar, PAN, passbook, DL…). Select
-                several files at once, or keep adding. Required:{" "}
-                {service.required_docs.join(", ")}. Mark{" "}
-                <strong>Handwritten</strong> for filled forms / block letters.
+                Required: {service.required_docs.join(", ")}
                 {!apiLive ? (
-                  <>
+                  <span className="text-status-uncertain">
                     {" "}
-                    <span className="text-status-uncertain">
-                      No API_KEY — live OCR disabled. Add{" "}
-                      <code className="rounded bg-muted px-1">API_KEY</code> in{" "}
-                      <code className="rounded bg-muted px-1">Sarvam_AI/.env</code>.
-                    </span>
-                  </>
+                    · API offline — set API_KEY to run OCR
+                  </span>
                 ) : null}
               </p>
 
               <div className="desk-upload">
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div className="flex flex-col gap-1">
-                    <Label htmlFor="docs">
-                      Add scans (JPG / JPEG / PNG / WebP / PDF) — multiple OK
-                    </Label>
+                    <Label htmlFor="docs">Add scans (multi OK)</Label>
                     <input
                       id="docs"
                       type="file"
@@ -1304,20 +1249,52 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             </Card>
           ) : (
             <>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {extractions.map((doc, i) => {
+                  const ocr = ocrDocAccuracy(doc);
+                  return (
+                    <button
+                      key={`ocr-acc-${doc.doc_type}-${i}`}
+                      type="button"
+                      onClick={() => setReviewIdx(i)}
+                      className={cn(
+                        "rounded-xl border p-3 text-left transition-colors",
+                        i === reviewIdx
+                          ? "border-primary bg-secondary"
+                          : "border-border bg-card hover:bg-muted/40"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="truncate text-sm font-semibold">
+                          {doc.doc_type}
+                        </p>
+                        <p
+                          className={cn(
+                            "shrink-0 font-heading text-lg font-semibold tabular-nums",
+                            ocr.ocrPct >= 80
+                              ? "text-status-match"
+                              : ocr.ocrPct >= 50
+                                ? "text-status-variant"
+                                : "text-status-uncertain"
+                          )}
+                        >
+                          {ocr.ocrPct}%
+                        </p>
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        OCR · {ocr.ocrReadable}/{ocr.ocrExpected} fields
+                        {ocr.ocrUnsure.length
+                          ? ` · missing ${ocr.ocrUnsure.join(", ")}`
+                          : ""}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="flex flex-wrap items-center gap-2">
-                {extractions.map((doc, i) => (
-                  <Button
-                    key={`${doc.doc_type}-${i}`}
-                    size="sm"
-                    variant={i === reviewIdx ? "default" : "outline"}
-                    onClick={() => setReviewIdx(i)}
-                  >
-                    {doc.doc_type}
-                    {doc.handwritten ? " · HW" : ""}
-                  </Button>
-                ))}
                 <Badge variant="outline" className="rounded-lg">
-                  {uncertainCount} UNCERTAIN field(s)
+                  {uncertainCount} unsure field(s)
                 </Badge>
               </div>
 
@@ -1325,12 +1302,10 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Card>
                     <CardHeader>
-                      <CardTitle>
-                        Check extracted fields
-                      </CardTitle>
+                      <CardTitle>Fields</CardTitle>
                       <p className="text-sm text-muted-foreground">
-                        {activeDoc.source_file} · {activeDoc.language}
-                        {activeDoc.handwritten ? " · handwritten" : " · printed"}
+                        {activeDoc.doc_type}
+                        {activeDoc.handwritten ? " · handwritten" : ""}
                       </p>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-3">
@@ -1349,7 +1324,9 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                         return (
                           <div key={key} className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between gap-2">
-                              <Label htmlFor={`${reviewIdx}-${key}`}>{key}</Label>
+                              <Label htmlFor={`${reviewIdx}-${key}`}>
+                                {ocrFieldLabel(activeDoc.doc_type, key)}
+                              </Label>
                               {bad ? (
                                 <Badge
                                   variant="outline"
@@ -1367,43 +1344,20 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                                 updateField(reviewIdx, key, e.target.value)
                               }
                             />
-                            {!bad ? (
-                              (() => {
-                                const snip = ocrSnippet(activeDoc.ocr_text, val);
-                                return snip ? (
-                                  <p className="rounded-md border border-border/60 bg-muted/40 px-2 py-1 font-mono text-[10px] leading-snug text-muted-foreground">
-                                    <span className="font-sans font-medium text-foreground">
-                                      Provenance ·{" "}
-                                    </span>
-                                    {snip}
-                                  </p>
-                                ) : (
-                                  <p className="text-[11px] text-muted-foreground">
-                                    Source: {activeDoc.doc_type}
-                                    {activeDoc.source_file
-                                      ? ` · ${activeDoc.source_file}`
-                                      : ""}
-                                  </p>
-                                );
-                              })()
-                            ) : null}
-                            {bad && elsewhere.length > 0 ? (
+                            {!bad ? null : elsewhere.length > 0 ? (
                               <p className="text-[11px] text-muted-foreground">
-                                Not on this {activeDoc.doc_type}. Available on{" "}
-                                {elsewhere.join(" · ")}. Verification will use the
-                                best readable source (Aadhaar → PAN → …).
+                Also on: {elsewhere.join(" · ")}
                               </p>
-                            ) : bad ? (
+                            ) : (
                               <p className="text-[11px] text-muted-foreground">
-                                Not printed / unreadable on this document — OK if
-                                another ID has it.
+                                Unreadable here — OK if another ID has it.
                               </p>
-                            ) : null}
+                            )}
                           </div>
                         );
                       })}
                       <div className="flex flex-col gap-1.5">
-                        <Label>Operator notes (on this doc)</Label>
+                        <Label>Notes</Label>
                         <Textarea
                           value={activeDoc.fields.confidence_notes || ""}
                           onChange={(e) =>
@@ -1417,18 +1371,12 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
                   <Card>
                     <CardHeader>
-                      <CardTitle>
-                        OCR text (source)
-                      </CardTitle>
+                      <CardTitle>OCR source</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <pre className="max-h-96 overflow-auto whitespace-pre-wrap border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
-                        {activeDoc.ocr_text || "(no OCR text returned)"}
+                        {activeDoc.ocr_text || "(empty)"}
                       </pre>
-                      <p className="mt-3 text-xs text-muted-foreground">
-                        Compare the OCR dump with edited fields. Leave UNCERTAIN if the
-                        scan is unreadable — do not invent values.
-                      </p>
                     </CardContent>
                   </Card>
                 </div>
@@ -1485,240 +1433,382 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
       {step === 4 && result && (
         <div className="flex flex-col gap-4">
-          {impact ? (
-            <div
-              className={cn(
-                "desk-notice",
-                impact.ready
-                  ? "border-l-status-match bg-status-match/5"
-                  : "border-l-status-blocker bg-status-blocker/5"
-              )}
-            >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  {impact.ready ? (
-                    <ShieldCheck className="mt-0.5 size-5 shrink-0 text-status-match" />
-                  ) : (
-                    <ShieldAlert className="mt-0.5 size-5 shrink-0 text-status-blocker" />
-                  )}
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      {impact.ready
-                        ? "Desk cleared — safe for portal pack"
-                        : `${impact.caught} portal rejection risk(s) caught at the desk`}
+          {(() => {
+            const summary = result.cross_document.summary;
+            const docScores = perDocAccuracy(
+              extractions,
+              result.cross_document.comparisons,
+              result.form_verification.checks
+            );
+            const accuracy = overallAccuracy(docScores);
+            const blockers = [
+              ...result.cross_document.comparisons.filter(
+                (c) => c.status === "CRITICAL"
+              ),
+              ...result.form_verification.checks
+                .filter((c) => c.status === "CRITICAL")
+                .map((c) => ({
+                  field: c.label,
+                  doc_a: "Form",
+                  doc_b: c.doc_type || "—",
+                  value_a: c.form_value,
+                  value_b: c.doc_value || "—",
+                  status: c.status,
+                  detail: c.detail,
+                })),
+            ];
+            const variants = result.cross_document.comparisons.filter(
+              (c) => c.status === "VARIANT" || c.status === "UNCERTAIN"
+            );
+            const formOk = result.form_verification.checks.filter(
+              (c) => c.status === "MATCH" || c.status === "VARIANT"
+            );
+            const formRisk = result.form_verification.checks.filter(
+              (c) => c.status === "CRITICAL" || c.status === "UNCERTAIN"
+            );
+
+            return (
+              <>
+                {/* Overall + counts */}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <div className="desk-panel flex flex-col justify-between gap-2 bg-card p-4 sm:col-span-2 lg:col-span-1">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Overall
+                    </p>
+                    <p className="font-heading text-4xl font-semibold tabular-nums text-foreground">
+                      {accuracy}
+                      <span className="text-lg text-muted-foreground">%</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      ~{impact.minutesSaved} min saved vs discovering this at{" "}
-                      {result.service.portal.name}. Score {impact.score} ·{" "}
-                      {impact.grade}
-                      {judgeMode ? " · Judge demo fixtures" : ""}.
+                      Avg across {docScores.length} docs ·{" "}
+                      {Math.round(result.knowledge.score)} KB
+                      {judgeMode ? " · demo" : ""}
                     </p>
                   </div>
-                </div>
-                <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide">
-                  <span className="border border-border bg-card px-2 py-1">
-                    {impact.caught} blockers caught
-                  </span>
-                  <span className="inline-flex items-center gap-1 border border-border bg-card px-2 py-1">
-                    <Clock className="size-3" />~{impact.minutesSaved} min
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="desk-panel overflow-hidden">
-            <div className="desk-panel-head">Verification summary</div>
-            <div className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4 sm:divide-y-0">
-              {(
-                [
-                  ["match", "Matches", result.cross_document.summary.matches],
-                  ["variant", "Variants", result.cross_document.summary.variants],
-                  ["blocker", "Blockers", result.cross_document.summary.blockers],
-                  [
-                    "uncertain",
-                    "Uncertain",
-                    result.cross_document.summary.uncertain,
-                  ],
-                ] as const
-              ).map(([status, label, value]) => (
-                <div
-                  key={status}
-                  className="flex items-center justify-between bg-card px-4 py-3"
-                >
-                  <div>
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                      {label}
-                    </p>
-                    <p className="text-2xl font-semibold tabular-nums text-foreground">
-                      {value}
-                    </p>
-                  </div>
-                  <StatusBadge status={status} />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="desk-panel overflow-hidden">
-            <div className="desk-panel-head">
-              <span>Knowledge score</span>
-              <span className="desk-chip">
-                {Math.round(result.knowledge.score)} · {result.knowledge.grade}
-              </span>
-            </div>
-            <div className="flex flex-col gap-3 bg-card p-4 text-sm text-muted-foreground">
-              <p>{result.knowledge.process_summary}</p>
-              {result.knowledge.checklist?.length ? (
-                <div>
-                  <p className="mb-1 font-medium text-foreground">Operator checklist</p>
-                  <ul className="flex flex-col gap-1">
-                    {result.knowledge.checklist.map((c) => (
-                      <li key={c}>• {c}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {result.knowledge.rejection_risks.length ? (
-                <div>
-                  <p className="mb-1 font-medium text-foreground">Rejection risks</p>
-                  {result.knowledge.rejection_risks.slice(0, 5).map((r) => (
-                    <p key={r}>• {r}</p>
+                  {(
+                    [
+                      [
+                        "blocker",
+                        "Risks",
+                        summary.blockers,
+                        "text-status-blocker",
+                        "border-status-blocker/30 bg-status-blocker/5",
+                      ],
+                      [
+                        "match",
+                        "Match",
+                        summary.matches,
+                        "text-status-match",
+                        "border-status-match/30 bg-status-match/5",
+                      ],
+                      [
+                        "variant",
+                        "Variant",
+                        summary.variants,
+                        "text-status-variant",
+                        "border-status-variant/30 bg-status-variant/5",
+                      ],
+                      [
+                        "uncertain",
+                        "Unsure",
+                        summary.uncertain,
+                        "text-status-uncertain",
+                        "border-status-uncertain/40 bg-status-uncertain/5",
+                      ],
+                    ] as const
+                  ).map(([key, label, value, color, box]) => (
+                    <div
+                      key={key}
+                      className={cn(
+                        "desk-panel flex flex-col justify-between gap-2 border p-4",
+                        box
+                      )}
+                    >
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {label}
+                      </p>
+                      <p
+                        className={cn(
+                          "font-heading text-3xl font-semibold tabular-nums",
+                          color
+                        )}
+                      >
+                        {value}
+                      </p>
+                    </div>
                   ))}
                 </div>
-              ) : null}
-              {result.knowledge.field_issues
-                ?.filter((i) => i.severity === "FAIL" || i.severity === "WARN")
-                .slice(0, 8)
-                .map((i) => (
-                  <p key={`${i.field_key}-${i.message}`} className="text-xs">
-                    <span className="font-medium text-foreground">{i.field_key}</span>{" "}
-                    [{i.severity}] {i.message}
-                  </p>
-                ))}
-            </div>
-          </div>
 
-          <div className="desk-panel overflow-hidden">
-            <div className="desk-panel-head">
-              <span>Form ↔ best-source document</span>
-            </div>
-            <p className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-              Each field is checked against the highest-priority readable ID
-              (Aadhaar → PAN → DL → …). Docs missing the field are ignored — not
-              blockers.
-            </p>
-            <div className="divide-y divide-border bg-card">
-              {result.form_verification.checks.map((c) => {
-                const sourceDoc = extractions.find((d) => d.doc_type === c.doc_type);
-                const snip = ocrSnippet(
-                  sourceDoc?.ocr_text,
-                  c.doc_value || undefined
-                );
-                return (
-                  <div
-                    key={c.form_key}
-                    className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:justify-between"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium">{c.label}</p>
-                        {c.doc_type ? (
-                          <span className="border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            Best source: {c.doc_type}
-                          </span>
-                        ) : null}
+                {/* Per-document accuracy */}
+                <div className="flex flex-col gap-3">
+                  <h3 className="font-heading text-base font-semibold">
+                    Accuracy per document
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {docScores.map((d, i) => (
+                      <div
+                        key={`${d.docType}-${i}`}
+                        className={cn(
+                          "rounded-xl border bg-card p-4",
+                          d.blocker > 0
+                            ? "border-status-blocker/35"
+                            : d.overallPct >= 85
+                              ? "border-status-match/30"
+                              : "border-border"
+                        )}
+                      >
+                        <div className="mb-3 flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">
+                              {d.docType}
+                            </p>
+                            {d.sourceFile ? (
+                              <p className="truncate text-[11px] text-muted-foreground">
+                                {d.sourceFile}
+                              </p>
+                            ) : null}
+                          </div>
+                          <p
+                            className={cn(
+                              "font-heading text-2xl font-semibold tabular-nums",
+                              d.overallPct >= 85
+                                ? "text-status-match"
+                                : d.overallPct >= 60
+                                  ? "text-status-variant"
+                                  : "text-status-blocker"
+                            )}
+                          >
+                            {d.overallPct}
+                            <span className="text-sm">%</span>
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div className="rounded-lg border border-border bg-muted/30 px-2.5 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              OCR fill
+                            </p>
+                            <p className="font-semibold tabular-nums">
+                              {d.ocrPct}%
+                              <span className="ml-1 font-normal text-muted-foreground">
+                                {d.ocrReadable}/{d.ocrExpected}
+                              </span>
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-border bg-muted/30 px-2.5 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              Verify
+                            </p>
+                            <p className="font-semibold tabular-nums">
+                              {d.verifyPct == null ? "—" : `${d.verifyPct}%`}
+                              {d.verifyTotal > 0 ? (
+                                <span className="ml-1 font-normal text-muted-foreground">
+                                  {d.verifyTotal} checks
+                                </span>
+                              ) : null}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                          {d.match > 0 ? (
+                            <span className="rounded-full bg-status-match/10 px-2 py-0.5 text-status-match">
+                              {d.match} match
+                            </span>
+                          ) : null}
+                          {d.variant > 0 ? (
+                            <span className="rounded-full bg-status-variant/10 px-2 py-0.5 text-status-variant">
+                              {d.variant} variant
+                            </span>
+                          ) : null}
+                          {d.blocker > 0 ? (
+                            <span className="rounded-full bg-status-blocker/10 px-2 py-0.5 text-status-blocker">
+                              {d.blocker} risk
+                            </span>
+                          ) : null}
+                          {d.unsure > 0 ? (
+                            <span className="rounded-full bg-status-uncertain/15 px-2 py-0.5 text-status-uncertain">
+                              {d.unsure} unsure
+                            </span>
+                          ) : null}
+                          {d.ocrUnsure.length > 0 ? (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+                              OCR miss: {d.ocrUnsure.join(", ")}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Form: “{c.form_value}” · {c.doc_type || "—"}: “
-                        {c.doc_value || "—"}”
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">{c.detail}</p>
-                      {snip ? (
-                        <p className="mt-1 border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] leading-snug text-muted-foreground">
-                          <span className="font-sans font-medium text-foreground">
-                            Provenance ·{" "}
-                          </span>
-                          {snip}
-                        </p>
-                      ) : null}
-                      {c.other_sources && c.other_sources.length > 0 ? (
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          Also readable on: {c.other_sources.join(" · ")}
-                        </p>
-                      ) : null}
-                    </div>
-                    <StatusBadge status={mapStatus(c.status)} />
+                    ))}
                   </div>
-                );
-              })}
-              {Object.keys(result.form_verification.approved_fields).length > 0 ? (
-                <div className="bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
-                  FORM-ONLY (no KYC source):{" "}
-                  {Object.entries(result.form_verification.approved_fields)
-                    .map(([k, v]) => `${k}=${v}`)
-                    .join(" · ")}
                 </div>
-              ) : null}
-            </div>
-          </div>
 
-          <div className="desk-panel overflow-hidden">
-            <div className="desk-panel-head">Cross-document</div>
-            <div className="divide-y divide-border bg-card">
-              {result.cross_document.comparisons
-                .filter((c) => c.status !== "MATCH")
-                .map((c, i) => (
-                  <div
-                    key={`${c.field}-${i}`}
-                    className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:justify-between"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">
-                        {c.field}: {c.doc_a} vs {c.doc_b}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        “{c.value_a}” vs “{c.value_b}” — {c.detail}
-                      </p>
-                    </div>
-                    <StatusBadge status={mapStatus(c.status)} />
+                {/* Risks first */}
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-heading text-base font-semibold">
+                      Risks to fix
+                    </h3>
+                    {result.remediation?.primary_doc ? (
+                      <span className="rounded-full border border-status-blocker/30 bg-status-blocker/10 px-2.5 py-1 text-xs font-medium text-status-blocker">
+                        Fix · {result.remediation.primary_doc}
+                      </span>
+                    ) : blockers.length === 0 ? (
+                      <span className="rounded-full border border-status-match/30 bg-status-match/10 px-2.5 py-1 text-xs font-medium text-status-match">
+                        No blockers
+                      </span>
+                    ) : null}
                   </div>
-                ))}
-              {result.cross_document.comparisons.filter((c) => c.status !== "MATCH")
-                .length === 0 ? (
-                <p className="px-4 py-3 text-sm text-muted-foreground">
-                  No non-match comparisons.
-                </p>
-              ) : null}
-            </div>
-          </div>
 
-          {result.remediation && (
-            <div className="desk-notice">
-              <p className="text-sm font-semibold text-primary">
-                Priority remediation
-              </p>
-              <p className="mt-1 text-sm">
-                {result.remediation.primary_doc
-                  ? `Fix first: ${result.remediation.primary_doc}`
-                  : "No critical blockers"}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {result.remediation.how}
-              </p>
-            </div>
-          )}
+                  {blockers.length === 0 ? (
+                    <div className="rounded-xl border border-status-match/25 bg-status-match/5 px-4 py-6 text-center text-sm text-status-match">
+                      Clear — no critical mismatches
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {blockers.map((c, i) => (
+                        <div
+                          key={`${c.field}-${i}`}
+                          className="rounded-xl border border-status-blocker/35 bg-status-blocker/5 p-4"
+                        >
+                          <div className="mb-2 flex items-start justify-between gap-2">
+                            <p className="text-sm font-semibold capitalize text-foreground">
+                              {c.field.replaceAll("_", " ")}
+                            </p>
+                            <StatusBadge status="blocker" className="shrink-0" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {c.doc_a} ↔ {c.doc_b}
+                          </p>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-lg border border-border bg-card px-2.5 py-2">
+                              <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                {c.doc_a}
+                              </p>
+                              <p className="leading-snug text-foreground">
+                                {c.value_a}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-2.5 py-2">
+                              <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                {c.doc_b}
+                              </p>
+                              <p className="leading-snug text-foreground">
+                                {c.value_b}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setStep(3)} className="rounded-lg">
-              <ArrowLeft data-icon="inline-start" />
-              Back to review
-            </Button>
-            <Button onClick={() => setStep(5)} className="rounded-lg">
-              Portal pack
-              <ArrowRight data-icon="inline-end" />
-            </Button>
-          </div>
+                {/* Form fields grid */}
+                <div className="flex flex-col gap-3">
+                  <h3 className="font-heading text-base font-semibold">
+                    Form fields
+                  </h3>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {[...formRisk, ...formOk].map((c) => {
+                      const st = mapStatus(c.status);
+                      return (
+                        <div
+                          key={c.form_key}
+                          className={cn(
+                            "rounded-xl border bg-card p-3",
+                            st === "blocker" &&
+                              "border-status-blocker/35 bg-status-blocker/5",
+                            st === "uncertain" &&
+                              "border-status-uncertain/40 bg-status-uncertain/5",
+                            st === "variant" && "border-status-variant/30",
+                            st === "match" && "border-border"
+                          )}
+                        >
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <p className="truncate text-sm font-medium">
+                              {c.label}
+                            </p>
+                            <StatusBadge status={st} className="shrink-0" />
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {c.form_value || "—"}
+                          </p>
+                          {c.doc_type ? (
+                            <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                              via {c.doc_type}
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Variants — compact, secondary */}
+                {variants.length > 0 ? (
+                  <details className="group rounded-xl border border-border bg-card open:pb-3">
+                    <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">
+                      <span className="flex items-center justify-between gap-2">
+                        <span>
+                          Harmless variants{" "}
+                          <span className="text-muted-foreground">
+                            ({variants.length})
+                          </span>
+                        </span>
+                        <span className="text-xs text-muted-foreground group-open:hidden">
+                          Show
+                        </span>
+                        <span className="hidden text-xs text-muted-foreground group-open:inline">
+                          Hide
+                        </span>
+                      </span>
+                    </summary>
+                    <div className="grid gap-2 px-3 sm:grid-cols-2">
+                      {variants.map((c, i) => (
+                        <div
+                          key={`${c.field}-v-${i}`}
+                          className="rounded-lg border border-status-variant/25 bg-status-variant/5 px-3 py-2.5"
+                        >
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <p className="text-xs font-medium capitalize">
+                              {c.field.replaceAll("_", " ")}
+                            </p>
+                            <StatusBadge
+                              status={mapStatus(c.status)}
+                              className="shrink-0"
+                            />
+                          </div>
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            {c.doc_a} ↔ {c.doc_b}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
+
+                {impact ? (
+                  <p className="text-center text-xs text-muted-foreground">
+                    ~{impact.minutesSaved} min saved ·{" "}
+                    {result.service.portal.name}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setStep(3)}
+                    className="rounded-lg"
+                  >
+                    <ArrowLeft data-icon="inline-start" />
+                    Back
+                  </Button>
+                  <Button onClick={() => setStep(5)} className="rounded-lg">
+                    {blockers.length ? "Pack anyway" : "Portal pack"}
+                    <ArrowRight data-icon="inline-end" />
+                  </Button>
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -1752,8 +1842,8 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
             </div>
             <div className="border-b border-border bg-card px-4 py-3 text-sm text-muted-foreground">
               {impact.ready
-                ? `Operator-reviewed OCR + form answers are packed for ${result.service.portal.name}. Download both PDFs, then open the portal.`
-                : `Desk caught ${impact.caught} rejection risk(s) before ${result.service.portal.name} upload. Download the audit for the citizen file, or go back and remediate.`}
+                ? `Ready for ${result.service.portal.name} — download the pack.`
+                : `${impact.caught} risk(s) before ${result.service.portal.name}. Download audit or remediate.`}
             </div>
             <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
               <div className="bg-card px-4 py-3">
@@ -1762,23 +1852,20 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 </p>
                 <p className="text-2xl font-semibold tabular-nums">{impact.caught}</p>
                 <p className="text-[11px] text-muted-foreground">
-                  {impact.blockers} cross-doc · {impact.formBlockers} form
+                  {impact.blockers} cross · {impact.formBlockers} form
                 </p>
               </div>
               <div className="bg-card px-4 py-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  Minutes saved
+                  Time saved
                 </p>
                 <p className="text-2xl font-semibold tabular-nums">
-                  ~{impact.minutesSaved}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  vs portal rejection loop
+                  ~{impact.minutesSaved}m
                 </p>
               </div>
               <div className="bg-card px-4 py-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  Variants / uncertain
+                  Variants / unsure
                 </p>
                 <p className="text-2xl font-semibold tabular-nums">
                   {impact.variants}
@@ -1786,9 +1873,6 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                     {" "}
                     / {impact.uncertain}
                   </span>
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  Operator judgment still needed
                 </p>
               </div>
             </div>
