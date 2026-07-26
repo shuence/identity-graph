@@ -266,22 +266,23 @@
   padding: 0.95rem 1.1rem;
 }
 
-/* —— Service catalog (step 0): compact tiles, less text wall —— */
+/* —— Service catalog (step 0): visual tiles, not a text wall —— */
 .desk-catalog-hero {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.15rem 1.25rem;
+  padding: 1.25rem 1.35rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background:
+    radial-gradient(120% 80% at 100% 0%, color-mix(in oklab, #ff9933 10%, transparent), transparent 55%),
     linear-gradient(
-      135deg,
-      color-mix(in oklab, var(--secondary) 70%, white) 0%,
-      white 55%,
-      color-mix(in oklab, #ff9933 8%, white) 100%
+      125deg,
+      color-mix(in oklab, var(--secondary) 80%, white) 0%,
+      white 48%,
+      color-mix(in oklab, #138808 6%, white) 100%
     );
   position: relative;
   overflow: hidden;
@@ -297,52 +298,130 @@
 
 .desk-catalog-kicker {
   font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 650;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--indigo-deep);
 }
 
 .desk-catalog-title {
-  margin-top: 0.2rem;
+  margin-top: 0.15rem;
   font-family: var(--font-heading), var(--font-sans), sans-serif;
-  font-size: 1.35rem;
+  font-size: 1.4rem;
   font-weight: 650;
   letter-spacing: -0.03em;
   color: var(--foreground);
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
-.desk-catalog-sub {
-  margin-top: 0.25rem;
-  font-size: 0.8125rem;
-  color: var(--muted-foreground);
-  max-width: 28rem;
-}
-
-.desk-catalog-hero-actions {
+.desk-pipeline {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.35rem 0.45rem;
+  margin-top: 0.85rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  font-weight: 550;
+  color: var(--foreground);
+}
+
+.desk-pipeline-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-right: 0.3rem;
+  border-radius: 2px;
+  background: var(--indigo-deep);
+  color: white;
+  font-size: 0.625rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.desk-pipeline-sep {
+  width: 0.85rem;
+  height: 1px;
+  background: color-mix(in oklab, var(--indigo-deep) 35%, var(--border));
+}
+
+.desk-judge-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: min(100%, 15rem);
+  padding: 0.85rem 1rem;
+  border: 1px solid color-mix(in oklab, var(--indigo-deep) 35%, var(--border));
+  border-radius: 2px;
+  background: white;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.desk-judge-card:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--secondary) 55%, white);
+  border-color: var(--indigo-deep);
+  transform: translateY(-1px);
+}
+
+.desk-judge-card:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.desk-judge-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 2px;
+  background: var(--indigo-deep);
+  color: white;
+  flex-shrink: 0;
+}
+
+.desk-judge-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.desk-judge-card-title {
+  font-size: 0.875rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.desk-judge-card-sub {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
 }
 
 .desk-mode-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.4rem;
 }
 
 .desk-mode-chip {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.05rem;
-  padding: 0.45rem 0.75rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 2px;
+  border-radius: 999px;
   background: var(--card);
   color: var(--foreground);
-  text-align: left;
+  font-size: 0.8125rem;
+  font-weight: 550;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
@@ -357,95 +436,105 @@
   color: white;
 }
 
-.desk-mode-chip-label {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  line-height: 1.2;
+.desk-mode-chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, currentColor 12%, transparent);
+  font-size: 0.625rem;
+  font-weight: 700;
 }
 
-.desk-mode-chip-meta {
-  font-size: 0.625rem;
-  opacity: 0.75;
-  line-height: 1.2;
+.desk-mode-chip.is-active .desk-mode-chip-count {
+  background: rgb(255 255 255 / 18%);
 }
 
 .desk-service-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
-  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 0.7rem;
 }
 
 .desk-service-tile {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  min-height: 8.5rem;
-  padding: 0.85rem 0.9rem;
+  align-items: flex-start;
+  gap: 0.45rem;
+  min-height: 9.25rem;
+  padding: 0.9rem;
   border: 1px solid var(--border);
   border-radius: 2px;
   background: var(--card);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .desk-service-tile:hover {
-  border-color: color-mix(in oklab, var(--indigo-deep) 35%, var(--border));
-  background: color-mix(in oklab, var(--secondary) 40%, white);
+  border-color: color-mix(in oklab, var(--indigo-deep) 40%, var(--border));
+  background: color-mix(in oklab, var(--secondary) 35%, white);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgb(11 61 145 / 7%);
 }
 
 .desk-service-tile.is-selected {
   border-color: var(--indigo-deep);
-  background: color-mix(in oklab, var(--secondary) 65%, white);
+  background: color-mix(in oklab, var(--secondary) 70%, white);
   box-shadow: inset 0 0 0 1px var(--indigo-deep);
+  transform: none;
+}
+
+.desk-service-tile-top {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .desk-service-tile-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.1rem;
-  height: 2.1rem;
-  border: 1px solid var(--border);
-  background: white;
-  color: var(--indigo-deep);
+  width: 2.35rem;
+  height: 2.35rem;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: var(--tile-accent, color-mix(in oklab, var(--secondary) 80%, white));
+  color: var(--tile-ink, var(--indigo-deep));
+}
+
+.desk-service-tile-icon.is-footer {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
 }
 
 .desk-service-tile.is-selected .desk-service-tile-icon {
-  border-color: var(--indigo-deep);
   background: var(--indigo-deep);
   color: white;
 }
 
-.desk-service-tile-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-  margin-top: auto;
+.desk-service-check {
+  color: var(--indigo-deep);
 }
 
 .desk-service-tile-cat {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
   font-size: 0.625rem;
   font-weight: 650;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
 
-.desk-service-selected-dot {
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 999px;
-  background: var(--indigo-deep);
-}
-
 .desk-service-tile-title {
   font-family: var(--font-heading), var(--font-sans), sans-serif;
-  font-size: 0.875rem;
+  font-size: 0.9rem;
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.25;
@@ -454,15 +543,78 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  flex: 1;
 }
 
 .desk-service-tile-meta {
   display: flex;
   flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: auto;
+}
+
+.desk-meta-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  font-size: 0.6875rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: white;
+  font-size: 0.625rem;
+  font-weight: 550;
   color: var(--muted-foreground);
+}
+
+.desk-service-tile.is-selected .desk-meta-pill {
+  border-color: color-mix(in oklab, var(--indigo-deep) 25%, var(--border));
+  color: var(--indigo-deep);
+}
+
+/* Category accents — muted government palette, not neon */
+.desk-service-tile.accent-aadhaar,
+.desk-service-tile-icon.accent-aadhaar {
+  --tile-accent: #e8eef8;
+  --tile-ink: #0b3d91;
+}
+.desk-service-tile.accent-transport,
+.desk-service-tile-icon.accent-transport {
+  --tile-accent: #e7f3ea;
+  --tile-ink: #1b5e20;
+}
+.desk-service-tile.accent-scheme,
+.desk-service-tile-icon.accent-scheme {
+  --tile-accent: #fff3e6;
+  --tile-ink: #b45309;
+}
+.desk-service-tile.accent-grievance,
+.desk-service-tile-icon.accent-grievance {
+  --tile-accent: #fdecea;
+  --tile-ink: #9b1c1c;
+}
+.desk-service-tile.accent-pan,
+.desk-service-tile-icon.accent-pan {
+  --tile-accent: #f4efe6;
+  --tile-ink: #8a5a14;
+}
+.desk-service-tile.accent-voter,
+.desk-service-tile-icon.accent-voter {
+  --tile-accent: #e6f4f1;
+  --tile-ink: #0f766e;
+}
+.desk-service-tile.accent-passport,
+.desk-service-tile-icon.accent-passport {
+  --tile-accent: #e8eef8;
+  --tile-ink: #1e3a5f;
+}
+.desk-service-tile.accent-gazette,
+.desk-service-tile-icon.accent-gazette {
+  --tile-accent: #f5f0e8;
+  --tile-ink: #7c5a2a;
+}
+.desk-service-tile.accent-default,
+.desk-service-tile-icon.accent-default {
+  --tile-accent: #eef2f7;
+  --tile-ink: #0b3d91;
 }
 
 .desk-catalog-footer {
@@ -471,7 +623,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.85rem 1.1rem;
+  padding: 0.9rem 1.1rem;
   border: 1px solid var(--border);
   border-top: 3px solid var(--indigo-deep);
   background: var(--card);

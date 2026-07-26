@@ -98,12 +98,12 @@ const ALL_DOC_TYPES = [
   "Other",
 ] as const;
 
-const MODE_CHIPS: { mode: string; label: string; hint: string }[] = [
-  { mode: "all", label: "All services", hint: "Full catalog" },
-  { mode: "paper_block_letters", label: "Paper", hint: "Block letters" },
-  { mode: "paper_or_online", label: "Hybrid", hint: "Paper or online" },
-  { mode: "assisted_counter", label: "Counter", hint: "CSC assisted" },
-  { mode: "portal_identity", label: "Portal", hint: "Identity match" },
+const MODE_CHIPS: { mode: string; label: string }[] = [
+  { mode: "all", label: "All" },
+  { mode: "paper_block_letters", label: "Paper" },
+  { mode: "paper_or_online", label: "Hybrid" },
+  { mode: "assisted_counter", label: "Counter" },
+  { mode: "portal_identity", label: "Portal" },
 ];
 
 function serviceIcon(category?: string | null) {
@@ -119,6 +119,20 @@ function serviceIcon(category?: string | null) {
   if (c.includes("certificate") || c.includes("birth")) return Building2;
   if (c.includes("ration") || c.includes("bank")) return Building2;
   return PenLine;
+}
+
+/** Soft accent class for category icon wells — scan-friendly, not rainbow. */
+function serviceAccent(category?: string | null) {
+  const c = (category || "").toLowerCase();
+  if (c.includes("aadhaar")) return "accent-aadhaar";
+  if (c.includes("transport") || c.includes("driving")) return "accent-transport";
+  if (c.includes("scheme")) return "accent-scheme";
+  if (c.includes("grievance")) return "accent-grievance";
+  if (c.includes("tax") || c.includes("pan")) return "accent-pan";
+  if (c.includes("election") || c.includes("voter")) return "accent-voter";
+  if (c.includes("passport")) return "accent-passport";
+  if (c.includes("gazette") || c.includes("name")) return "accent-gazette";
+  return "accent-default";
 }
 
 function shortServiceTitle(title: string) {
@@ -631,7 +645,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         title="IdentityGraph Suvidha Desk"
         description={
           step === 0
-            ? "Choose a scheme — then voice fill, OCR, verify, portal pack"
+            ? "Pick a scheme · voice fill · verify · portal pack"
             : service
               ? `${shortServiceTitle(service.title)} · ${fillModeLabel(service.fill_mode) || "desk"}`
               : "Sarvam Epoch · CSC desk for identity forms"
@@ -724,41 +738,55 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       </nav>
 
       {step === 0 && (
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-4">
           <div className="desk-catalog-hero">
             <div className="desk-catalog-hero-copy">
-              <p className="desk-catalog-kicker">पहचान सेतु · desk catalog</p>
-              <h2 className="desk-catalog-title">Pick a service</h2>
-              <p className="desk-catalog-sub">
-                Voice fill → OCR docs → mismatch check → portal pack.
-              </p>
+              <p className="desk-catalog-kicker">पहचान सेतु</p>
+              <h2 className="desk-catalog-title">Choose a desk service</h2>
+              <ol className="desk-pipeline" aria-label="What happens next">
+                <li>
+                  <span className="desk-pipeline-num">1</span>
+                  Voice form
+                </li>
+                <li aria-hidden className="desk-pipeline-sep" />
+                <li>
+                  <span className="desk-pipeline-num">2</span>
+                  OCR docs
+                </li>
+                <li aria-hidden className="desk-pipeline-sep" />
+                <li>
+                  <span className="desk-pipeline-num">3</span>
+                  Verify
+                </li>
+                <li aria-hidden className="desk-pipeline-sep" />
+                <li>
+                  <span className="desk-pipeline-num">4</span>
+                  Portal pack
+                </li>
+              </ol>
             </div>
-            <div className="desk-catalog-hero-actions">
-              <Button
-                disabled={busy}
-                onClick={() => void runJudgeDemo()}
-                className="shrink-0 rounded-sm"
-              >
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runJudgeDemo()}
+              className="desk-judge-card"
+            >
+              <span className="desk-judge-card-icon" aria-hidden>
                 {busy ? (
-                  <Loader2 className="animate-spin" data-icon="inline-start" />
+                  <Loader2 className="size-5 animate-spin" />
                 ) : (
-                  <Sparkles data-icon="inline-start" />
+                  <Sparkles className="size-5" />
                 )}
-                Judge demo
-              </Button>
-              <Button
-                disabled={!service}
-                onClick={() => setStep(1)}
-                variant="secondary"
-                className="shrink-0 rounded-sm"
-              >
-                Continue
-                <ArrowRight data-icon="inline-end" />
-              </Button>
-            </div>
+              </span>
+              <span className="desk-judge-card-body">
+                <span className="desk-judge-card-title">Judge demo</span>
+                <span className="desk-judge-card-sub">90s · Sanika RTO fixtures</span>
+              </span>
+              <ArrowRight className="size-4 shrink-0 opacity-70" aria-hidden />
+            </button>
           </div>
 
-          <div className="desk-mode-chips" role="tablist" aria-label="Filter by fill mode">
+          <div className="desk-mode-chips" role="tablist" aria-label="Filter services">
             {MODE_CHIPS.map((chip) => {
               const count =
                 chip.mode === "all"
@@ -775,10 +803,8 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   onClick={() => setModeFilter(chip.mode)}
                   className={cn("desk-mode-chip", on && "is-active")}
                 >
-                  <span className="desk-mode-chip-label">{chip.label}</span>
-                  <span className="desk-mode-chip-meta">
-                    {chip.hint} · {count}
-                  </span>
+                  {chip.label}
+                  <span className="desk-mode-chip-count">{count}</span>
                 </button>
               );
             })}
@@ -794,22 +820,29 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                   key={s.id}
                   type="button"
                   onClick={() => void selectService(s.id)}
-                  className={cn("desk-service-tile", on && "is-selected")}
+                  className={cn(
+                    "desk-service-tile",
+                    serviceAccent(s.category),
+                    on && "is-selected"
+                  )}
                 >
-                  <span className="desk-service-tile-icon" aria-hidden>
-                    <Icon className="size-5" />
+                  <span className="desk-service-tile-top">
+                    <span className="desk-service-tile-icon" aria-hidden>
+                      <Icon className="size-5" strokeWidth={1.75} />
+                    </span>
+                    {on ? (
+                      <span className="desk-service-check" aria-label="Selected">
+                        <CheckCircle2 className="size-4" />
+                      </span>
+                    ) : null}
                   </span>
-                  <span className="desk-service-tile-body">
-                    <span className="desk-service-tile-cat">
-                      {s.category || fillModeLabel(s.fill_mode) || "Service"}
-                      {on ? <span className="desk-service-selected-dot" /> : null}
-                    </span>
-                    <span className="desk-service-tile-title">{title}</span>
-                    <span className="desk-service-tile-meta">
-                      <span>{s.required_docs.length} docs</span>
-                      <span aria-hidden>·</span>
-                      <span>{s.form_fields.length} fields</span>
-                    </span>
+                  <span className="desk-service-tile-cat">
+                    {s.category || "Service"}
+                  </span>
+                  <span className="desk-service-tile-title">{title}</span>
+                  <span className="desk-service-tile-meta">
+                    <span className="desk-meta-pill">{s.required_docs.length} docs</span>
+                    <span className="desk-meta-pill">{s.form_fields.length} fields</span>
                   </span>
                 </button>
               );
@@ -818,30 +851,45 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
           {service ? (
             <div className="desk-catalog-footer">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#0b3d91]">
-                  Selected
-                </p>
-                <p className="truncate text-sm font-semibold text-foreground">
-                  {service.title}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {fillModeLabel(service.fill_mode) || "Operator desk"}
-                  {" · "}
-                  {service.required_docs.slice(0, 3).join(", ")}
-                  {service.required_docs.length > 3 ? "…" : ""}
-                </p>
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  className={cn(
+                    "desk-service-tile-icon is-footer",
+                    serviceAccent(service.category)
+                  )}
+                  aria-hidden
+                >
+                  {(() => {
+                    const Icon = serviceIcon(service.category);
+                    return <Icon className="size-5" strokeWidth={1.75} />;
+                  })()}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {shortServiceTitle(service.title)}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {service.required_docs.slice(0, 2).join(" · ")}
+                    {service.required_docs.length > 2
+                      ? ` +${service.required_docs.length - 2}`
+                      : ""}
+                  </p>
+                </div>
               </div>
               <Button
                 disabled={!service}
                 onClick={() => setStep(1)}
                 className="shrink-0 rounded-sm"
               >
-                Next — Application form
+                Start application
                 <ArrowRight data-icon="inline-end" />
               </Button>
             </div>
-          ) : null}
+          ) : (
+            <p className="text-center text-xs text-muted-foreground">
+              Tap a service tile to continue
+            </p>
+          )}
         </div>
       )}
 
