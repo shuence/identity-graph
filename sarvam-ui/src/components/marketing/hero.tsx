@@ -19,17 +19,18 @@ export function Hero() {
           variant="secondary"
           className="w-fit animate-fade-up rounded-full px-3 py-1 text-xs font-medium"
         >
-          IdentityGraph India · Sarvam Epoch
+          IdentityGraph India · Sarvam Epoch Buildathon
         </Badge>
 
         <h1 className="max-w-4xl animate-fade-up font-heading text-5xl font-semibold leading-[1.05] tracking-tight text-foreground md:text-6xl lg:text-7xl [animation-delay:80ms]">
-          Fix mismatched identity records before applications fail
+          IdentityGraph
         </h1>
 
         <p className="max-w-2xl animate-fade-up text-lg text-muted-foreground md:text-xl [animation-delay:140ms]">
-          The cross-document identity reconciliation engine for India — variant vs
-          blocker classification, source-traceable provenance, and a shareable audit
-          file for banks, loans, and KYC.
+          The Suvidha desk for forms India still fills by hand — Aadhaar Form 1,
+          PAN CR, ECI Form 6/8, passport annexures. Sarvam voice asks in Hindi,
+          Vision reads block letters, 30B structures the pack before the portal
+          rejects Mohd vs Mohammed.
         </p>
 
         <div className="flex animate-fade-up flex-wrap gap-3 [animation-delay:200ms]">
@@ -42,7 +43,7 @@ export function Hero() {
             render={<Link href="/app" />}
             nativeButton={false}
           >
-            Start live OCR
+            Live OCR + Bulbul prompts
           </Button>
         </div>
       </div>

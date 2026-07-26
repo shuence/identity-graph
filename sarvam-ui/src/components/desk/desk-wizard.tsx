@@ -21,6 +21,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/identity/status-badge";
 import {
+  OperatorRail,
+  fillModeLabel,
+} from "@/components/desk/operator-rail";
+import {
   downloadPack,
   extractDocuments,
   fetchHealth,
@@ -52,6 +56,13 @@ const FIELD_KEYS = [
   "id_number",
 ] as const;
 
+const FILL_ORDER = [
+  "paper_block_letters",
+  "paper_or_online",
+  "assisted_counter",
+  "portal_identity",
+] as const;
+
 type UploadRow = {
   file: File;
   docType: string;
@@ -60,6 +71,20 @@ type UploadRow = {
 
 function isUncertain(v: string | undefined) {
   return !v || v.trim().toUpperCase() === "UNCERTAIN";
+}
+
+function isLongField(key: string) {
+  return (
+    key.includes("address") ||
+    key.includes("reason") ||
+    key.includes("complaint") ||
+    key.includes("outcome") ||
+    key.includes("summary") ||
+    key.includes("members") ||
+    key.includes("newspaper") ||
+    key.includes("correction") ||
+    key.includes("fields_to")
+  );
 }
 
 export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) {
@@ -73,18 +98,31 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
   const [extractions, setExtractions] = useState<Extraction[]>([]);
   const [result, setResult] = useState<VerifyResult | null>(null);
   const [notes, setNotes] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
   const [apiLive, setApiLive] = useState(false);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [reviewIdx, setReviewIdx] = useState(0);
   const [reviewed, setReviewed] = useState(false);
+  const [speakingField, setSpeakingField] = useState<string | null>(null);
+
+  const servicesByMode = useMemo(() => {
+    const groups: { mode: string; items: Service[] }[] = [];
+    for (const mode of FILL_ORDER) {
+      const items = services.filter((s) => s.fill_mode === mode);
+      if (items.length) groups.push({ mode, items });
+    }
+    const rest = services.filter(
+      (s) => !s.fill_mode || !FILL_ORDER.includes(s.fill_mode as (typeof FILL_ORDER)[number])
+    );
+    if (rest.length) groups.push({ mode: "other", items: rest });
+    return groups;
+  }, [services]);
 
   const loadServices = useCallback(async () => {
-    setBusy(true);
-    setBootError(null);
     try {
       const health = await fetchHealth();
+      setBootError(null);
       if (!health.sarvam_key_loaded) {
         throw new Error(
           "Sarvam API key not loaded. Add API_KEY to Sarvam_AI/.env and restart ./run_api.sh"
@@ -176,35 +214,52 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 
   function fillFormFromDocs() {
     if (!service) return;
-    const aadhaar =
-      extractions.find((d) => d.doc_type === "Aadhaar Card") || extractions[0];
-    if (!aadhaar) return;
     const next = { ...answers };
     for (const spec of service.form_fields) {
       const compare = spec.compare_to;
       if (!compare) continue;
-      const val = aadhaar.fields[compare];
-      if (val && !isUncertain(val)) {
-        if (spec.key === "aadhaar_number" || compare === "id_number") {
-          next[spec.key] = val;
-        } else if (spec.key === compare || spec.compare_doc === aadhaar.doc_type) {
-          next[spec.key] = val;
-        } else if (["full_name", "father_name", "dob", "address"].includes(spec.key)) {
-          next[spec.key] = aadhaar.fields[spec.key] || next[spec.key] || "";
-        }
-      }
+      const preferred =
+        (spec.compare_doc &&
+          extractions.find((d) => d.doc_type === spec.compare_doc)) ||
+        extractions.find((d) => d.doc_type === "Aadhaar Card") ||
+        extractions[0];
+      if (!preferred) continue;
+      const val = preferred.fields[compare] || preferred.fields[spec.key];
+      if (val && !isUncertain(val)) next[spec.key] = val;
     }
-    // Map common keys
-    if (!next.full_name && aadhaar.fields.full_name) next.full_name = aadhaar.fields.full_name;
-    if (!next.father_name && aadhaar.fields.father_name)
-      next.father_name = aadhaar.fields.father_name;
-    if (!next.dob && aadhaar.fields.dob) next.dob = aadhaar.fields.dob;
-    if (!next.address && aadhaar.fields.address) next.address = aadhaar.fields.address;
-    if (!next.aadhaar_number && aadhaar.fields.id_number)
-      next.aadhaar_number = aadhaar.fields.id_number;
     setAnswers(next);
     toast.success("Form filled from reviewed OCR — check high-stakes fields");
     setStep(1);
+  }
+
+  async function playFieldPrompt(fieldKey: string) {
+    if (!service || !apiLive) {
+      toast.error("Live Sarvam voice required");
+      return;
+    }
+    const field = service.form_fields.find((f) => f.key === fieldKey);
+    const prompt = field?.prompt_hi || field?.prompt_en;
+    if (!prompt) {
+      toast.error("No voice prompt for this field");
+      return;
+    }
+    setBusy(true);
+    setSpeakingField(fieldKey);
+    try {
+      const blob = await speakPrompt(prompt, "hi-IN");
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      await audio.play();
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        setSpeakingField(null);
+      };
+    } catch (e) {
+      setSpeakingField(null);
+      toast.error(e instanceof Error ? e.message : "TTS failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function runVerify() {
@@ -264,7 +319,14 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
 # API_KEY in Sarvam_AI/.env
 # sarvam-ui .env.local → IDENTITYGRAPH_API_URL=http://127.0.0.1:8001`}
             </pre>
-            <Button onClick={() => void loadServices()} disabled={busy}>
+            <Button
+              onClick={() => {
+                setBusy(true);
+                setBootError(null);
+                void loadServices();
+              }}
+              disabled={busy}
+            >
               {busy ? (
                 <Loader2 className="animate-spin" data-icon="inline-start" />
               ) : null}
@@ -282,8 +344,8 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
         title="IdentityGraph Suvidha Desk"
         description={
           service
-            ? `${service.title} — live OCR, handwritten support, operator review`
-            : "Upload → OCR → review → verify → portal pack"
+            ? `${service.title} · ${fillModeLabel(service.fill_mode) || "operator desk"} — voice, OCR, mismatch verify, portal pack`
+            : "Sarvam Epoch · CSC desk for India's still-manual identity forms"
         }
         actions={
           <Badge
@@ -322,30 +384,55 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       </div>
 
       {step === 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {services.map((s) => {
-            const on = s.id === serviceId;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => void selectService(s.id)}
-                className={cn(
-                  "rounded-xl border p-5 text-left transition-colors",
-                  on
-                    ? "border-primary/40 bg-secondary/50"
-                    : "border-border bg-card hover:border-primary/25"
-                )}
-              >
-                <p className="font-heading text-lg font-semibold">{s.title}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{s.tagline}</p>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Docs: {s.required_docs.join(" · ")}
-                </p>
-              </button>
-            );
-          })}
-          <div className="flex justify-end md:col-span-2">
+        <div className="flex flex-col gap-8">
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Pick the form the citizen needs. Catalog is evidence-backed: paper
+            block-letter forms, BLO/ERO offline, CSC-assisted portals, and
+            identity-mismatch remediation — not DigiLocker/GST self-serve.
+          </p>
+          {servicesByMode.map((group) => (
+            <div key={group.mode} className="flex flex-col gap-3">
+              <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                {fillModeLabel(group.mode) || group.mode}
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2">
+                {group.items.map((s) => {
+                  const on = s.id === serviceId;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => void selectService(s.id)}
+                      className={cn(
+                        "rounded-xl border p-5 text-left transition-colors",
+                        on
+                          ? "border-primary/40 bg-secondary/50"
+                          : "border-border bg-card hover:border-primary/25"
+                      )}
+                    >
+                      {s.category ? (
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          {s.category}
+                        </p>
+                      ) : null}
+                      <p className="font-heading text-lg font-semibold">{s.title}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{s.tagline}</p>
+                      {s.official_form ? (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {s.official_form}
+                        </p>
+                      ) : null}
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Docs: {s.required_docs.join(" · ")} ·{" "}
+                        {s.form_fields.length} fields
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          <div className="flex justify-end">
             <Button disabled={!service} onClick={() => setStep(1)}>
               Next — Application form
               <ArrowRight data-icon="inline-end" />
@@ -355,27 +442,56 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
       )}
 
       {step === 1 && service && (
-        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
           <Card className="border-border shadow-none">
             <CardHeader className="gap-2 border-b border-border bg-muted/30">
               <CardTitle className="text-center font-heading text-xl uppercase tracking-wide">
                 {service.title}
               </CardTitle>
               <p className="text-center text-xs text-muted-foreground">
-                Application form · {service.portal.name}
+                {service.official_form || service.portal.name}
+                {service.fill_mode
+                  ? ` · ${fillModeLabel(service.fill_mode)}`
+                  : ""}
               </p>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4 pt-6">
+            <CardContent className="flex flex-col gap-5 pt-6">
               {service.form_fields.map((field) => (
-                <div key={field.key} className="flex flex-col gap-2">
-                  <Label htmlFor={field.key}>
-                    {field.label}
-                    {field.high_stakes ? " *" : ""}
-                  </Label>
-                  {field.key.includes("address") ||
-                  field.key.includes("reason") ||
-                  field.key.includes("complaint") ||
-                  field.key.includes("outcome") ? (
+                <div
+                  key={field.key}
+                  className={cn(
+                    "flex flex-col gap-2 rounded-lg border border-transparent p-1",
+                    speakingField === field.key && "border-primary/40 bg-secondary/40"
+                  )}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Label htmlFor={field.key} className="flex-1">
+                      {field.label}
+                      {field.high_stakes ? " *" : ""}
+                    </Label>
+                    {field.high_stakes ? (
+                      <Badge variant="secondary" className="text-[10px]">
+                        High stakes
+                      </Badge>
+                    ) : null}
+                    {field.compare_doc ? (
+                      <Badge variant="outline" className="text-[10px]">
+                        Match {field.compare_doc}
+                      </Badge>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy || !apiLive}
+                      className="h-7 px-2"
+                      onClick={() => void playFieldPrompt(field.key)}
+                      title="Play Hindi prompt (Bulbul)"
+                    >
+                      <Volume2 className="size-3.5" />
+                    </Button>
+                  </div>
+                  {isLongField(field.key) ? (
                     <Textarea
                       id={field.key}
                       value={answers[field.key] || ""}
@@ -383,6 +499,7 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                         setAnswers((a) => ({ ...a, [field.key]: e.target.value }))
                       }
                       rows={3}
+                      placeholder={field.prompt_en || ""}
                     />
                   ) : (
                     <Input
@@ -391,51 +508,31 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                       onChange={(e) =>
                         setAnswers((a) => ({ ...a, [field.key]: e.target.value }))
                       }
+                      placeholder={field.prompt_en || ""}
                     />
                   )}
+                  {field.operator_tip ? (
+                    <p className="text-[11px] leading-snug text-muted-foreground">
+                      {field.operator_tip}
+                    </p>
+                  ) : null}
+                  {field.prompt_hi ? (
+                    <p className="text-[11px] text-muted-foreground/80">
+                      हि: {field.prompt_hi}
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </CardContent>
           </Card>
 
           <div className="flex flex-col gap-4">
-            <Card className="border-border bg-secondary/30 shadow-none">
-              <CardHeader>
-                <CardTitle className="font-heading text-lg">Operator assist</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
-                <p>
-                  Fill from the citizen, or OCR documents first then{" "}
-                  <strong>Fill form from OCR</strong> on the review step.
-                </p>
-                {service.form_fields[0]?.prompt_hi ? (
-                  <Button
-                    variant="outline"
-                    disabled={busy}
-                    onClick={async () => {
-                      setBusy(true);
-                      try {
-                        const prompt =
-                          service.form_fields[0].prompt_hi ||
-                          service.form_fields[0].prompt_en ||
-                          "";
-                        const blob = await speakPrompt(prompt, "hi-IN");
-                        const url = URL.createObjectURL(blob);
-                        await new Audio(url).play();
-                        toast.success("Bulbul v3 prompt played");
-                      } catch (e) {
-                        toast.error(e instanceof Error ? e.message : "TTS failed");
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  >
-                    <Volume2 data-icon="inline-start" />
-                    Play first-field prompt
-                  </Button>
-                ) : null}
-              </CardContent>
-            </Card>
+            <OperatorRail
+              service={service}
+              speakingField={speakingField}
+              onSpeak={(key) => void playFieldPrompt(key)}
+              busy={busy}
+            />
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => setStep(0)}>
                 <ArrowLeft data-icon="inline-start" />
@@ -734,11 +831,35 @@ export function DeskWizard({ initialServiceId }: { initialServiceId?: string }) 
                 {Math.round(result.knowledge.score)} · {result.knowledge.grade}
               </Badge>
             </CardHeader>
-            <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
+            <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
               <p>{result.knowledge.process_summary}</p>
-              {result.knowledge.rejection_risks.slice(0, 4).map((r) => (
-                <p key={r}>• {r}</p>
-              ))}
+              {result.knowledge.checklist?.length ? (
+                <div>
+                  <p className="mb-1 font-medium text-foreground">Operator checklist</p>
+                  <ul className="flex flex-col gap-1">
+                    {result.knowledge.checklist.map((c) => (
+                      <li key={c}>• {c}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {result.knowledge.rejection_risks.length ? (
+                <div>
+                  <p className="mb-1 font-medium text-foreground">Rejection risks</p>
+                  {result.knowledge.rejection_risks.slice(0, 5).map((r) => (
+                    <p key={r}>• {r}</p>
+                  ))}
+                </div>
+              ) : null}
+              {result.knowledge.field_issues
+                ?.filter((i) => i.severity === "FAIL" || i.severity === "WARN")
+                .slice(0, 8)
+                .map((i) => (
+                  <p key={`${i.field_key}-${i.message}`} className="text-xs">
+                    <span className="font-medium text-foreground">{i.field_key}</span>{" "}
+                    [{i.severity}] {i.message}
+                  </p>
+                ))}
             </CardContent>
           </Card>
 

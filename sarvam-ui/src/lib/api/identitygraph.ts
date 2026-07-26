@@ -6,17 +6,37 @@ export type ServiceField = {
   prompt_en?: string;
   compare_to?: string | null;
   compare_doc?: string;
+  operator_tip?: string;
+};
+
+export type OperatorPack = {
+  process_summary: string;
+  operator_checklist: string[];
+  rejection_reasons: string[];
+  required_docs: string[];
+  recommended_docs: string[];
+  category: string;
 };
 
 export type Service = {
   id: string;
   title: string;
+  category?: string;
+  fill_mode?: string;
+  official_form?: string;
+  source_url?: string;
   tagline: string;
   why: string;
   required_docs: string[];
   optional_docs: string[];
   portal: { name: string; url: string };
   form_fields: ServiceField[];
+  operator?: OperatorPack;
+  positioning?: {
+    audience?: string;
+    stack?: string;
+    hackathon?: string;
+  };
 };
 
 export type Extraction = {

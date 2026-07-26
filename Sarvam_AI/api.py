@@ -20,7 +20,8 @@ from identitygraph.form_check import verify_form_against_docs
 from identitygraph.knowledge_base import validate_against_knowledge
 from identitygraph.reconcile import ReconciliationResult, reconcile
 from identitygraph.report import build_audit_pdf, build_filled_form_pdf
-from identitygraph.services import get_service, list_services
+from identitygraph.services import get_service
+from identitygraph.operator import serialize_all_services, serialize_service
 
 ROOT = Path(__file__).parent
 load_dotenv(ROOT / ".env")
@@ -161,48 +162,15 @@ def meta():
 
 @app.get("/services")
 def services():
-    return [
-        {
-            "id": s["id"],
-            "title": s["title"],
-            "tagline": s["tagline"],
-            "why": s["why"],
-            "required_docs": s["required_docs"],
-            "optional_docs": s.get("optional_docs", []),
-            "portal": s["portal"],
-            "form_fields": [
-                {
-                    "key": f["key"],
-                    "label": f["label"],
-                    "high_stakes": bool(f.get("high_stakes")),
-                    "prompt_hi": f.get("prompt_hi", ""),
-                    "prompt_en": f.get("prompt_en", ""),
-                    "compare_to": f.get("compare_to"),
-                    "compare_doc": f.get("compare_doc"),
-                }
-                for f in s["form_fields"]
-            ],
-        }
-        for s in list_services()
-    ]
+    return serialize_all_services()
 
 
 @app.get("/services/{service_id}")
 def service_detail(service_id: str):
     try:
-        s = get_service(service_id)
+        return serialize_service(service_id)
     except KeyError as exc:
         raise HTTPException(404, f"Unknown service: {service_id}") from exc
-    return {
-        "id": s["id"],
-        "title": s["title"],
-        "tagline": s["tagline"],
-        "why": s["why"],
-        "required_docs": s["required_docs"],
-        "optional_docs": s.get("optional_docs", []),
-        "portal": s["portal"],
-        "form_fields": s["form_fields"],
-    }
 
 
 @app.get("/demo/{service_id}")

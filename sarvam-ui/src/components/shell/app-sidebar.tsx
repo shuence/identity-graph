@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { GitCompare, Home, LayoutDashboard, Workflow } from "lucide-react";
+import { GitCompare, Home, LayoutDashboard } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -19,12 +19,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 
 const nav = [
-  { title: "Suvidha Desk", href: "/app", icon: LayoutDashboard },
-  {
-    title: "Link mobile ↔ Aadhaar",
-    href: "/app?service=link_mobile_aadhaar",
-    icon: Workflow,
-  },
+  { title: "Operator desk", href: "/app", icon: LayoutDashboard },
 ];
 
 export function AppSidebar() {
@@ -48,7 +43,7 @@ export function AppSidebar() {
                   IdentityGraph
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
-                  Suvidha Desk
+                  Fix mismatches before submit
                 </span>
               </div>
             </SidebarMenuButton>
@@ -58,25 +53,21 @@ export function AppSidebar() {
       <Separator />
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+          <SidebarGroupLabel>Desk</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {nav.map((item) => {
-                const pathOnly = item.href.split("?")[0];
-                const active = pathname === pathOnly;
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      isActive={active}
-                      tooltip={item.title}
-                      render={<Link href={item.href} />}
-                    >
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {nav.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    isActive={pathname === item.href || pathname.startsWith(`${item.href}/`)}
+                    tooltip={item.title}
+                    render={<Link href={item.href} />}
+                  >
+                    <item.icon />
+                    <span>{item.title}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -84,7 +75,7 @@ export function AppSidebar() {
       <SidebarFooter className="p-3">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton render={<Link href="/" />} tooltip="Marketing site">
+            <SidebarMenuButton render={<Link href="/" />} tooltip="Product site">
               <Home />
               <span>Product site</span>
             </SidebarMenuButton>

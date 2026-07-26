@@ -1,34 +1,39 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Crosshair, Link2, Sparkles } from "lucide-react";
+import { FileScan, Mic, ShieldCheck } from "lucide-react";
 
 const pillars = [
   {
-    title: "Source-traceable provenance",
-    desc: "Every flagged field links to its bounding-box on the original scan so users verify context instantly.",
-    icon: Crosshair,
+    title: "Voice for the desk",
+    desc: "Bulbul speaks every field prompt in Hindi; Saaras can capture the citizen's answer. Built for operators who fill forms while the citizen sits beside them.",
+    icon: Mic,
   },
   {
-    title: "Priority remediation pathway",
-    desc: "Identify the single primary document causing the most blockers and route to the correct portal.",
-    icon: Link2,
+    title: "Document intelligence",
+    desc: "Sarvam Vision + 30B OCR on printed IDs and handwritten block-letter forms. Operator reviews UNCERTAIN fields before anything hits the portal.",
+    icon: FileScan,
   },
   {
-    title: "Built for Epoch",
-    desc: "Sarvam-ready design system underneath — Indic OCR and TTS can plug into the same shell.",
-    icon: Sparkles,
+    title: "Mismatch before rejection",
+    desc: "Variant vs blocker classification across Aadhaar, PAN, EPIC, DL, passbook — then a portal-ready pack with the operator checklist from the real form KB.",
+    icon: ShieldCheck,
   },
 ];
 
 export function Pillars() {
   return (
-    <section className="border-b border-border py-20 md:py-28">
+    <section id="pillars" className="border-b border-border py-20 md:py-28">
       <div className="mx-auto max-w-7xl px-4 md:px-8">
         <div className="mb-12 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <h2 className="max-w-xl font-heading text-3xl font-semibold tracking-tight md:text-4xl">
-            Built for citizens, usable by officers
-          </h2>
+          <div className="flex flex-col gap-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Sarvam stack · Epoch positioning
+            </p>
+            <h2 className="max-w-xl font-heading text-3xl font-semibold tracking-tight md:text-4xl">
+              Voice + documents for Bharat&apos;s counters
+            </h2>
+          </div>
           <Button render={<Link href="/app" />} nativeButton={false}>
             Open Suvidha Desk
           </Button>

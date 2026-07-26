@@ -4,8 +4,8 @@ const columns = [
   {
     title: "Product",
     links: [
-      { label: "Suvidha Desk", href: "/app" },
-      { label: "Link mobile ↔ Aadhaar", href: "/app?service=link_mobile_aadhaar" },
+      { label: "Operator desk", href: "/app" },
+      { label: "How it works", href: "/#pillars" },
     ],
   },
   {
@@ -20,7 +20,7 @@ const columns = [
     title: "Epoch",
     links: [
       { label: "Sarvam AI", href: "https://www.sarvam.ai/" },
-      { label: "Design system", href: "/" },
+      { label: "Epoch", href: "https://epoch.sarvam.ai/" },
     ],
   },
 ];
@@ -35,8 +35,8 @@ export function SiteFooter() {
               IdentityGraph <span className="text-primary">India</span>
             </p>
             <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-              Cross-document identity reconciliation that fixes mismatched personal
-              records before applications fail.
+              Problem: block-letter forms + name/DOB mismatches fail KYC and
+              portals. Solution: voice-fill, OCR, verify, then pack.
             </p>
           </div>
           <div className="rounded-xl border border-border bg-secondary/50 px-5 py-4">

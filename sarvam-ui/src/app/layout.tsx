@@ -22,9 +22,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IdentityGraph India — Cross-document identity reconciliation",
+  title: "IdentityGraph India — Suvidha Desk for Sarvam Epoch",
   description:
-    "Fix mismatched personal records before passport, loan, and e-KYC applications fail.",
+    "CSC operator desk for India's still-manual identity forms. Sarvam Vision OCR, Bulbul voice prompts, mismatch verify, portal pack.",
 };
 
 export default function RootLayout({

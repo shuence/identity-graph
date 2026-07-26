@@ -11,7 +11,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarTrigger />
           <Separator orientation="vertical" className="mr-1 h-4" />
           <span className="text-sm text-muted-foreground">
-            Suvidha Desk · Sarvam_AI engine
+            IdentityGraph · mismatch check before portal submit
           </span>
         </header>
         <div className="flex flex-1 flex-col gap-6 p-4 md:p-8 print:p-0">{children}</div>
