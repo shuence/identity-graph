@@ -171,7 +171,15 @@ async function multipart<T>(path: string, form: FormData): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || `${res.status} ${res.statusText}`);
+    let message = text || `${res.status} ${res.statusText}`;
+    try {
+      const parsed = JSON.parse(text) as { detail?: unknown; error?: string };
+      if (typeof parsed.detail === "string") message = parsed.detail;
+      else if (parsed.error) message = parsed.error;
+    } catch {
+      /* keep raw text */
+    }
+    throw new Error(message);
   }
   return res.json() as Promise<T>;
 }

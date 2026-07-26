@@ -53,6 +53,35 @@ def digitize_document(client: SarvamAI, file_path: str, language: str = "en-IN",
     return combined
 
 
+def digitize_document_resilient(
+    client: SarvamAI,
+    file_path: str,
+    language: str = "en-IN",
+    timeout: int = 300,
+) -> tuple[str, str]:
+    """Try primary language, then hi-IN / en-IN fallback for Indian forms.
+
+    Returns (ocr_text, language_used).
+    """
+    tried: list[str] = []
+    last: Exception | None = None
+    for lang in (language, "hi-IN", "en-IN"):
+        if lang in tried:
+            continue
+        tried.append(lang)
+        try:
+            text = digitize_document(client, file_path, language=lang, timeout=timeout)
+            if text.strip():
+                return text, lang
+        except RuntimeError as exc:
+            last = exc
+            continue
+    raise RuntimeError(
+        f"Sarvam Vision could not read this scan (tried {', '.join(tried)}). "
+        "Use a clear JPG/PNG of the filled form — blank or blurry pages return no text. "
+        f"Last error: {last}"
+    ) from last
+
 def _json_to_text(data) -> str:
     parts: list[str] = []
 
@@ -466,11 +495,13 @@ def process_scanned_form(
     language: str = "en-IN",
 ) -> dict:
     """Digitize a scanned application form → service form_answers."""
-    ocr_text = digitize_document(client, file_path, language=language)
+    ocr_text, lang_used = digitize_document_resilient(
+        client, file_path, language=language
+    )
     answers = extract_form_answers(client, ocr_text, form_fields)
     return {
         "source_file": os.path.basename(file_path),
-        "language": language,
+        "language": lang_used,
         "ocr_text": ocr_text,
         "form_answers": answers,
         "demo_fallback": False,

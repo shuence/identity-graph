@@ -402,10 +402,18 @@ async def extract_form(
 
     _require_sarvam_key()
     from identitygraph.sarvam_pipeline import get_client, process_scanned_form
+    import logging
 
     path = None
     try:
         path, original = await _save_upload(file)
+        # Guard obvious empty / tiny uploads before burning a Vision job.
+        if os.path.getsize(path) < 2_000:
+            raise HTTPException(
+                400,
+                f"Upload too small ({os.path.getsize(path)} bytes). "
+                "Scan a filled form as JPG/PNG — blank images return no OCR text.",
+            )
         client = get_client(_api_key())
         result = process_scanned_form(
             client, path, service["form_fields"], language=language
@@ -421,7 +429,9 @@ async def extract_form(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(502, f"Form OCR failed: {exc}") from exc
+        logging.exception("Form OCR failed for %s", service_id)
+        # 422 so clients don't confuse this with Next.js proxy gateway failure.
+        raise HTTPException(422, f"Form OCR failed: {exc}") from exc
     finally:
         if path:
             try:
