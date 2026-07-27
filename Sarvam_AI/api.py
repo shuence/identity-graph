@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from identitygraph import auth_store
 from identitygraph.config import DOC_TYPES, FIELD_LABELS, LANGUAGES, REMEDIATION_PORTALS
 from identitygraph.form_check import verify_form_against_docs
 from identitygraph.knowledge_base import validate_against_knowledge
@@ -38,6 +39,51 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def _startup_auth_db() -> None:
+    auth_store.init_db()
+
+
+def _bearer_token(
+    authorization: str | None = Header(default=None),
+    x_ig_token: str | None = Header(default=None, alias="X-IG-Token"),
+) -> str | None:
+    if x_ig_token:
+        return x_ig_token.strip()
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return None
+
+
+def require_user(
+    authorization: str | None = Header(default=None),
+    x_ig_token: str | None = Header(default=None, alias="X-IG-Token"),
+) -> dict:
+    token = _bearer_token(authorization, x_ig_token)
+    user = auth_store.user_from_token(token)
+    if not user:
+        raise HTTPException(401, "Sign in required")
+    return user
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class CaseUpsert(BaseModel):
+    service_id: str | None = None
+    citizen_label: str | None = None
+    step: int | None = None
+    answers: dict[str, str] | None = None
+    extractions: list[dict] | None = None
+    verify_result: dict | None = None
+    notes: str | None = None
+    form_reviewed: bool | None = None
+    ocr_reviewed: bool | None = None
+    status: str | None = None
 
 
 def _jsonable(obj: Any) -> Any:
@@ -602,3 +648,53 @@ def pack_audit(body: VerifyRequest):
         media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="identity-audit.pdf"'},
     )
+
+
+@app.post("/auth/login")
+def auth_login(body: LoginRequest):
+    result = auth_store.login(body.email, body.password)
+    if not result:
+        raise HTTPException(401, "Invalid email or password")
+    return result
+
+
+@app.post("/auth/logout")
+def auth_logout(
+    authorization: str | None = Header(default=None),
+    x_ig_token: str | None = Header(default=None, alias="X-IG-Token"),
+):
+    auth_store.logout(_bearer_token(authorization, x_ig_token))
+    return {"ok": True}
+
+
+@app.get("/auth/me")
+def auth_me(user: dict = Depends(require_user)):
+    return {"user": user}
+
+
+@app.get("/cases")
+def cases_list(user: dict = Depends(require_user), limit: int = 20):
+    return {"cases": auth_store.list_cases(user["id"], limit=min(limit, 50))}
+
+
+@app.post("/cases")
+def cases_create(body: CaseUpsert, user: dict = Depends(require_user)):
+    return auth_store.create_case(user["id"], body.model_dump(exclude_none=True))
+
+
+@app.get("/cases/{case_id}")
+def cases_get(case_id: str, user: dict = Depends(require_user)):
+    row = auth_store.get_case(user["id"], case_id)
+    if not row:
+        raise HTTPException(404, "Case not found")
+    return row
+
+
+@app.patch("/cases/{case_id}")
+def cases_patch(case_id: str, body: CaseUpsert, user: dict = Depends(require_user)):
+    row = auth_store.update_case(
+        user["id"], case_id, body.model_dump(exclude_none=True)
+    )
+    if not row:
+        raise HTTPException(404, "Case not found")
+    return row
